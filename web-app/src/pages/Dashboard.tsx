@@ -14,8 +14,11 @@ import {
 } from 'lucide-react';
 
 const Dashboard: React.FC = () => {
-  // 为每个分类添加折叠状态管理，默认都展开
-  const [collapsedCategories, setCollapsedCategories] = React.useState<{ [key: number]: boolean }>({});
+  // 分类折叠状态管理
+  const [collapsedCategories, setCollapsedCategories] = React.useState<{ [key: string]: boolean }>({});
+  
+  // 更新内容模态框显示状态
+  const [showUpdateModal, setShowUpdateModal] = React.useState(false);
   
   // 切换分类的折叠状态
   const toggleCategory = (categoryId: number) => {
@@ -27,13 +30,13 @@ const Dashboard: React.FC = () => {
   
   const categories = [
     {
-      id: 1,
-      name: '图纸设计',
+      id: 'drawing',
+      name: '图纸绘制',
       functions: [
         {
-          id: 3,
-          title: 'BRB图纸设计',
-          description: 'BRB图纸参数化设计',
+          id: 'brb-drawing',
+          title: 'BRB图纸绘制',
+          description: '参数化生成BRB阻尼器图纸',
           icon: Box,
           color: 'bg-orange-500',
           link: '/brb-drawing'
@@ -54,8 +57,8 @@ const Dashboard: React.FC = () => {
         },
         {
           id: 8,
-          title: 'BRB稳定性核算',
-          description: '核算屈曲约束支撑(BRB)的稳定性参数',
+          title: 'BRB结构核算',
+          description: '核算屈曲约束支撑（BRB）屈服力及稳定性',
           icon: Shield,
           color: 'bg-green-500',
           link: '/brb-stability'
@@ -139,9 +142,60 @@ const Dashboard: React.FC = () => {
   return (
     <div className="min-h-screen py-8 px-4 sm:px-6 lg:px-8">
       {/* 页面标题 */}
-      <div className="max-w-7xl mx-auto mb-12">
-        <h1 className="text-3xl font-bold text-gray-900">设计工具集</h1>
-        <p className="mt-2 text-lg text-gray-600">专业的CAD参数化设计与文件转换平台</p>
+      <div className="max-w-7xl mx-auto mb-12 relative">
+        <h1 className="text-3xl font-bold text-gray-900">阻尼器设计工具集</h1>
+        <div className="mt-2 flex items-center justify-between">
+          <p className="text-lg text-gray-600">专业的阻尼器辅助设计平台</p>
+          <div className="flex items-center space-x-2">
+            <div className="bg-brb-blue-100 text-brb-blue-800 px-3 py-1 rounded-full text-sm font-medium">
+              版本 3.0.1
+            </div>
+            {/* 更新内容按钮 */}
+            <button
+              onClick={() => setShowUpdateModal(!showUpdateModal)}
+              className="bg-brb-blue-500 text-white px-3 py-1 rounded-full text-sm font-medium hover:bg-brb-blue-600 transition-colors duration-150 flex items-center space-x-1"
+            >
+              <span>更新内容</span>
+              <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+              </svg>
+            </button>
+          </div>
+        </div>
+        
+        {/* 更新内容悬浮框 */}
+        {showUpdateModal && (
+          <div className="absolute top-full right-0 mt-2 w-80 bg-white shadow-lg rounded-lg border border-gray-200 z-50 p-4">
+            <div className="flex justify-between items-start mb-3">
+              <h3 className="text-lg font-semibold text-gray-900">3.0.1 版本更新内容</h3>
+              <button
+                onClick={() => setShowUpdateModal(false)}
+                className="text-gray-400 hover:text-gray-600 transition-colors"
+              >
+                <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            <div className="space-y-2 text-sm text-gray-700">
+              <div className="flex items-start space-x-2">
+                <span className="text-brb-blue-500 font-medium">•</span>
+                <span>修复侧边栏与折叠按钮阴影显示问题</span>
+              </div>
+              <div className="flex items-start space-x-2">
+                <span className="text-brb-blue-500 font-medium">•</span>
+                <span>BRB结构核算导出文件由csv改为excel</span>
+              </div>
+              <div className="flex items-start space-x-2">
+                <span className="text-brb-blue-500 font-medium">•</span>
+                <span>修复BRB参数表无法拖动到指定位置bug</span>
+              </div>
+            </div>
+            <div className="mt-4 pt-3 border-t border-gray-200 text-xs text-gray-500">
+              发布日期：2026-01-15
+            </div>
+          </div>
+        )}
       </div>
 
       {/* 分类功能区域 */}

@@ -13,14 +13,16 @@ import {
   HelpCircle,
   Shield,
   ChevronDown, 
-  ChevronRight
+  ChevronRight,
+  ChevronLeft
 } from 'lucide-react';
 
 interface SidebarProps {
   visible: boolean;
+  toggleSidebar: () => void;
 }
 
-const Sidebar: React.FC<SidebarProps> = ({ visible }) => {
+const Sidebar: React.FC<SidebarProps> = ({ visible, toggleSidebar }) => {
   const location = useLocation();
   
   // 为每个分类添加折叠状态管理，默认都展开
@@ -47,10 +49,10 @@ const Sidebar: React.FC<SidebarProps> = ({ visible }) => {
       ]
     },
     {
-      category: '图纸设计',
+      category: '图纸绘制',
       items: [
         {
-          name: 'BRB图纸设计',
+          name: 'BRB图纸绘制',
           path: '/brb-drawing',
           icon: Box,
           color: 'text-orange-600'
@@ -67,7 +69,7 @@ const Sidebar: React.FC<SidebarProps> = ({ visible }) => {
             color: 'text-blue-600'
           },
           {
-            name: 'BRB稳定性核算',
+            name: 'BRB结构核算',
             path: '/brb-stability',
             icon: Shield,
             color: 'text-green-600'

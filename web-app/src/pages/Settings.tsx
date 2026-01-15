@@ -93,7 +93,7 @@ const Settings: React.FC = () => {
           'brb_projectName',
           'brb_totalQuantity',
           'brb_parameterTables',
-          // BRB图纸设计数据
+          // BRB图纸绘制数据
           'brb_drawing_projectName',
           'brb_drawing_totalQuantity',
           'brb_drawing_parameterTables',

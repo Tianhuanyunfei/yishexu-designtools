@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Shield, CheckCircle, AlertTriangle, Download, Plus, Trash2, ChevronsLeftRight } from 'lucide-react';
 import { useToast } from '../components/Toast';
+import * as XLSX from 'xlsx';
 
 // 单行参数接口
 interface BrbParamRow {
@@ -49,6 +50,21 @@ interface StabilityResult {
 }
 
 const BrbStabilityChecker: React.FC = () => {
+  // 默认参数值映射表 - 组件级别，供多个函数使用
+  const defaultParams: Record<string, string> = {
+    yieldForce: '5500',
+    length: '2700',
+    coreWidth: '200',
+    coreHeight: '200',
+    coreThickness: '35',
+    tubeWidth: '250',
+    tubeHeight: '250',
+    tubeThickness: '4',
+    elasticModulus: '206',
+    yieldStrength: '294',
+    materialModel: 'Q235'
+  };
+
   // 从localStorage加载初始状态
   const loadInitialState = () => {
     try {
@@ -349,20 +365,7 @@ const BrbStabilityChecker: React.FC = () => {
 
   // 计算单个BRB行参数的稳定性
   const calculateRowStability = (rowId: string, rowParams: BrbParamRow): StabilityResult | null => {
-    // 默认参数值映射表
-    const defaultParams: Record<string, string> = {
-      yieldForce: '5500',
-      length: '2700',
-      coreWidth: '200',
-      coreHeight: '200',
-      coreThickness: '35',
-      tubeWidth: '250',
-      tubeHeight: '250',
-      tubeThickness: '4',
-      elasticModulus: '206',
-      yieldStrength: '294',
-      materialModel: 'Q235'
-    };
+    // 使用组件级别的defaultParams
 
     try {
       // 转换为数值，使用默认值填充空字段
@@ -546,17 +549,17 @@ const BrbStabilityChecker: React.FC = () => {
       return [
         rowIndex + 1,
         `${row.energySection}${row.endSection}`,
-        row.yieldForce,
-        row.length,
-        row.coreWidth,
-        row.coreHeight,
-        row.coreThickness,
-        row.tubeWidth,
-        row.tubeHeight,
-        row.tubeThickness,
-        row.materialModel,
-        row.elasticModulus,
-        row.yieldStrength,
+        row.yieldForce || defaultParams.yieldForce,
+        row.length || defaultParams.length,
+        row.coreWidth || defaultParams.coreWidth,
+        row.coreHeight || defaultParams.coreHeight,
+        row.coreThickness || defaultParams.coreThickness,
+        row.tubeWidth || defaultParams.tubeWidth,
+        row.tubeHeight || defaultParams.tubeHeight,
+        row.tubeThickness || defaultParams.tubeThickness,
+        row.materialModel || defaultParams.materialModel,
+        row.elasticModulus || defaultParams.elasticModulus,
+        row.yieldStrength || defaultParams.yieldStrength,
         result.coreArea.toFixed(0),
         result.coreIy.toFixed(0),
         result.coreIz.toFixed(0),
@@ -573,22 +576,17 @@ const BrbStabilityChecker: React.FC = () => {
       ];
     }).filter(row => row !== null);
 
-    // 创建CSV内容
-    const csvContent = [
-      header.join(','),
-      ...rowsWithResults.map(row => row!.join(','))
-    ].join('\n');
+    // 创建工作簿和工作表
+    const worksheetData = [
+      header,
+      ...rowsWithResults.map(row => row!)
+    ];
+    const worksheet = XLSX.utils.aoa_to_sheet(worksheetData);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'BRB结构核算结果');
 
-    // 创建Blob并下载
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.setAttribute('href', url);
-    link.setAttribute('download', `BRB稳定性核算结果_${new Date().toISOString().slice(0, 10)}.csv`);
-    link.style.visibility = 'hidden';
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    // 导出Excel文件
+    XLSX.writeFile(workbook, `BRB结构核算结果_${new Date().toISOString().slice(0, 10)}.xlsx`);
 
     showToast('结果导出成功', 'success');
   };
@@ -600,10 +598,10 @@ const BrbStabilityChecker: React.FC = () => {
         <div className="mb-8">
           <h1 className="text-3xl font-bold text-gray-900">
             <Shield className="inline-block mr-3" />
-            BRB稳定性核算
+            BRB结构核算
           </h1>
           <p className="mt-2 text-lg text-gray-600">
-            用于计算屈曲约束支撑(BRB)的稳定性参数
+            核算屈曲约束支撑（BRB）屈服力及稳定性
           </p>
         </div>
 
@@ -645,8 +643,8 @@ const BrbStabilityChecker: React.FC = () => {
                     {/* BRB型号 */}
                     <th className="px-2 py-1 border-b border-r border-gray-300 bg-gray-100 font-medium text-xs text-gray-800" colSpan={2}>BRB型号</th>
                     
-                    {/* 截面大类 */}
-                    <th className="px-2 py-1 border-b border-r border-gray-300 bg-gray-100 font-medium text-xs text-gray-800" colSpan={2}>截面</th>
+                    {/* 截面形状大类 */}
+                    <th className="px-2 py-1 border-b border-r border-gray-300 bg-gray-100 font-medium text-xs text-gray-800" colSpan={2}>截面形状</th>
                     
                     {/* 端面尺寸 */}
                     <th className="px-2 py-1 border-b border-r border-gray-300 bg-gray-100 font-medium text-xs text-gray-800" colSpan={3}>端面尺寸</th>
@@ -664,7 +662,7 @@ const BrbStabilityChecker: React.FC = () => {
                     <th className="px-2 py-1 border-b border-r border-gray-300 bg-gray-100 font-medium text-xs text-gray-800" style={{ width: '80px' }}>屈服力</th>
                     <th className="px-2 py-1 border-b border-r border-gray-300 bg-gray-100 font-medium text-xs text-gray-800" style={{ width: '80px' }}>长度</th>
                     
-                    {/* 截面小类 */}
+                    {/* 截面形状小类 */}
                     <th className="px-2 py-1 border-b border-r border-gray-300 bg-gray-100 font-medium text-xs text-gray-800" style={{ width: '100px' }}>耗能面</th>
                     <th className="px-2 py-1 border-b border-r border-gray-300 bg-gray-100 font-medium text-xs text-gray-800" style={{ width: '100px' }}>端面</th>
                     
@@ -887,12 +885,12 @@ const BrbStabilityChecker: React.FC = () => {
                   <table className="min-w-full border border-gray-300">
                     <thead className="bg-gray-100">
                       <tr>
-                        <th className="px-2 py-1 border-b border-r border-gray-300 bg-gray-100 font-medium text-xs text-gray-800">序号</th>
-                        {/* 芯材截面参数 */}
-                        <th className="px-2 py-1 border-b border-r border-gray-300 bg-gray-100 font-medium text-xs text-gray-800" colSpan={3}>芯材截面参数</th>
+                        <th className="px-2 py-1 border-b border-r border-gray-300 bg-gray-100 font-medium text-xs text-gray-800" rowSpan={2}>序号</th>
+                        {/* 芯材截面计算 */}
+                        <th className="px-2 py-1 border-b border-r border-gray-300 bg-gray-100 font-medium text-xs text-gray-800" colSpan={3}>芯材截面计算</th>
                         
-                        {/* 套筒结构参数 */}
-                        <th className="px-2 py-1 border-b border-r border-gray-300 bg-gray-100 font-medium text-xs text-gray-800" colSpan={3}>套筒结构参数</th>
+                        {/* 套筒截面计算 */}
+                        <th className="px-2 py-1 border-b border-r border-gray-300 bg-gray-100 font-medium text-xs text-gray-800" colSpan={3}>套筒截面计算</th>
                         
                         {/* 芯材屈服力核算 */}
                         <th className="px-2 py-1 border-b border-r border-gray-300 bg-gray-100 font-medium text-xs text-gray-800" colSpan={2}>芯材屈服力核算</th>
@@ -901,13 +899,12 @@ const BrbStabilityChecker: React.FC = () => {
                         <th className="px-2 py-1 border-b border-r border-gray-300 bg-gray-100 font-medium text-xs text-gray-800" colSpan={5}>稳定性核算</th>
                       </tr>
                       <tr>
-                        <th className="px-2 py-1 border-b border-r border-gray-300 bg-gray-100 font-medium text-xs text-gray-800"></th>
-                        {/* 芯材截面参数 */}
+                        {/* 芯材截面计算 */}
                         <th className="px-2 py-1 border-b border-r border-gray-300 bg-gray-100 font-medium text-xs text-gray-800">截面积</th>
                         <th className="px-2 py-1 border-b border-r border-gray-300 bg-gray-100 font-medium text-xs text-gray-800">Iy</th>
                         <th className="px-2 py-1 border-b border-r border-gray-300 bg-gray-100 font-medium text-xs text-gray-800">Iz</th>
                         
-                        {/* 套筒结构参数 */}
+                        {/* 套筒截面计算 */}
                         <th className="px-2 py-1 border-b border-r border-gray-300 bg-gray-100 font-medium text-xs text-gray-800">截面积</th>
                         <th className="px-2 py-1 border-b border-r border-gray-300 bg-gray-100 font-medium text-xs text-gray-800">Iy</th>
                         <th className="px-2 py-1 border-b border-r border-gray-300 bg-gray-100 font-medium text-xs text-gray-800">Iz</th>
@@ -932,12 +929,12 @@ const BrbStabilityChecker: React.FC = () => {
                         return (
                           <tr key={row.rowId}>
                             <td className="px-2 py-1 border-b border-r border-gray-300 bg-gray-50 text-center text-xs">{rowIndex + 1}</td>
-                            {/* 芯材截面参数 */}
+                            {/* 芯材截面计算 */}
                             <td className="px-2 py-1 border-b border-r border-gray-300 text-xs text-center">{result.coreArea}</td>
                             <td className="px-2 py-1 border-b border-r border-gray-300 text-xs text-center">{result.coreIy.toExponential(2)}</td>
                             <td className="px-2 py-1 border-b border-r border-gray-300 text-xs text-center">{result.coreIz.toExponential(2)}</td>
                             
-                            {/* 套筒结构参数 */}
+                            {/* 套筒截面计算 */}
                             <td className="px-2 py-1 border-b border-r border-gray-300 text-xs text-center">{result.tubeArea}</td>
                             <td className="px-2 py-1 border-b border-r border-gray-300 text-xs text-center">{result.tubeIy.toExponential(2)}</td>
                             <td className="px-2 py-1 border-b border-r border-gray-300 text-xs text-center">{result.tubeIz.toExponential(2)}</td>

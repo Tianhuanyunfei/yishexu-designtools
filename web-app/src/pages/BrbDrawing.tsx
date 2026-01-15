@@ -65,7 +65,7 @@ const BrbDrawing: React.FC = () => {
         parameterTables: initialParameterTables
       };
     } catch (error) {
-      console.error('加载BRB图纸设计初始状态失败:', error);
+      console.error('加载BRB图纸绘制初始状态失败:', error);
       return {
         projectName: '',
         totalQuantity: 0,
@@ -271,7 +271,7 @@ const BrbDrawing: React.FC = () => {
   };
 
   const handleDragLeave = (e: React.DragEvent) => {
-    const container = document.querySelector('.flex.space-x-4.min-w-max');
+    const container = document.querySelector('.flex.space-x-6.min-w-max');
     if (container && !container.contains(e.relatedTarget as Node)) {
       setDragToIndex(null);
     }
@@ -281,18 +281,27 @@ const BrbDrawing: React.FC = () => {
     e.preventDefault();
     const fromIndex = parseInt(e.dataTransfer.getData('text/plain'), 10);
     let toIndex = dragToIndex;
+    
+    // 计算正确的插入位置
     if (toIndex === null) {
       const rect = e.currentTarget.getBoundingClientRect();
       const x = e.clientX - rect.left;
       toIndex = x < rect.width / 2 ? index : index + 1;
     }
-    if (fromIndex < toIndex) {
-      toIndex -= 1;
+    
+    // 调整位置逻辑：如果从前面的位置拖拽到后面的位置，需要减去1
+    let finalToIndex = toIndex;
+    if (fromIndex < finalToIndex) {
+      finalToIndex -= 1;
     }
-    if (fromIndex !== toIndex) {
+    
+    // 确保位置在有效范围内
+    finalToIndex = Math.max(0, Math.min(finalToIndex, parameterTables.length));
+    
+    if (fromIndex !== finalToIndex) {
       const newTables = [...parameterTables];
       const [movedTable] = newTables.splice(fromIndex, 1);
-      newTables.splice(toIndex, 0, movedTable);
+      newTables.splice(finalToIndex, 0, movedTable);
       setParameterTables(newTables);
     }
     setDragFromIndex(null);
@@ -942,7 +951,7 @@ const BrbDrawing: React.FC = () => {
       <div className="flex items-center justify-between">
         <div className="flex items-center space-x-3">
           <Box className="h-8 w-8 text-orange-600" />
-          <h1 className="text-2xl font-bold text-gray-900">BRB图纸设计</h1>
+          <h1 className="text-2xl font-bold text-gray-900">BRB图纸绘制</h1>
         </div>
         <div className="flex space-x-3">
           <button className="btn-secondary flex items-center space-x-2"
@@ -1002,15 +1011,59 @@ const BrbDrawing: React.FC = () => {
       <div className="overflow-x-auto pb-4">
         <div 
           className="flex space-x-6 min-w-max transition-all duration-300 ease-in-out"
-          onDragOver={(e) => e.preventDefault()}
+          onDragOver={(e) => {
+            e.preventDefault();
+            
+            // 计算鼠标在容器中的位置，用于显示插入指示线
+            const container = e.currentTarget as HTMLElement;
+            const cards = container.querySelectorAll('.card');
+            const mouseX = e.clientX;
+            
+            let closestIndex = parameterTables.length;
+            let minDistance = Infinity;
+            
+            // 遍历所有卡片，找出鼠标最接近的卡片
+            cards.forEach((card, index) => {
+              const rect = card.getBoundingClientRect();
+              const cardCenter = rect.left + rect.width / 2;
+              const distance = Math.abs(mouseX - cardCenter);
+              
+              if (distance < minDistance) {
+                minDistance = distance;
+                closestIndex = index;
+              }
+            });
+            
+            // 根据鼠标位置计算插入位置
+            if (cards.length > 0) {
+              const closestCard = cards[closestIndex] as HTMLElement;
+              const rect = closestCard.getBoundingClientRect();
+              const cardCenter = rect.left + rect.width / 2;
+              const insertIndex = mouseX < cardCenter ? closestIndex : closestIndex + 1;
+              setDragToIndex(insertIndex);
+            } else {
+              setDragToIndex(0);
+            }
+          }}
           onDrop={(e) => {
             e.preventDefault();
             const fromIndex = parseInt(e.dataTransfer.getData('text/plain'), 10);
-            const toIndex = parameterTables.length;
-            if (fromIndex !== toIndex) {
+            let toIndex = dragToIndex;
+            
+            if (toIndex === null) {
+              toIndex = parameterTables.length;
+            }
+            
+            // 调整位置：如果从前面拖拽到后面，需要减去1
+            let finalToIndex = toIndex;
+            if (fromIndex < finalToIndex) {
+              finalToIndex -= 1;
+            }
+            
+            if (fromIndex !== finalToIndex) {
               const newTables = [...parameterTables];
               const [movedTable] = newTables.splice(fromIndex, 1);
-              newTables.splice(toIndex, 0, movedTable);
+              newTables.splice(finalToIndex, 0, movedTable);
               setParameterTables(newTables);
             }
             setDragFromIndex(null);
