@@ -148,7 +148,7 @@ const Dashboard: React.FC = () => {
           <p className="text-lg text-gray-600">专业的阻尼器辅助设计平台</p>
           <div className="flex items-center space-x-2">
             <div className="bg-brb-blue-100 text-brb-blue-800 px-3 py-1 rounded-full text-sm font-medium">
-              版本 3.0.1
+              版本 3.0.2
             </div>
             {/* 更新内容按钮 */}
             <button
@@ -167,7 +167,7 @@ const Dashboard: React.FC = () => {
         {showUpdateModal && (
           <div className="absolute top-full right-0 mt-2 w-80 bg-white shadow-lg rounded-lg border border-gray-200 z-50 p-4">
             <div className="flex justify-between items-start mb-3">
-              <h3 className="text-lg font-semibold text-gray-900">3.0.1 版本更新内容</h3>
+              <h3 className="text-lg font-semibold text-gray-900">3.0.2 版本更新内容</h3>
               <button
                 onClick={() => setShowUpdateModal(false)}
                 className="text-gray-400 hover:text-gray-600 transition-colors"
@@ -189,6 +189,10 @@ const Dashboard: React.FC = () => {
               <div className="flex items-start space-x-2">
                 <span className="text-brb-blue-500 font-medium">•</span>
                 <span>修复BRB参数表无法拖动到指定位置bug</span>
+              </div>
+              <div className="flex items-start space-x-2">
+                <span className="text-brb-blue-500 font-medium">•</span>
+                <span>优化侧边栏显示，默认状态改为折叠</span>
               </div>
             </div>
             <div className="mt-4 pt-3 border-t border-gray-200 text-xs text-gray-500">

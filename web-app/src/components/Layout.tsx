@@ -8,8 +8,8 @@ interface LayoutProps {
 }
 
 const Layout: React.FC<LayoutProps> = ({ children }) => {
-  // 侧边栏显示状态，默认为显示
-  const [sidebarVisible, setSidebarVisible] = useState(true);
+  // 侧边栏显示状态，默认为折叠
+  const [sidebarVisible, setSidebarVisible] = useState(false);
   
   // 切换侧边栏显示/隐藏
   const toggleSidebar = () => {
