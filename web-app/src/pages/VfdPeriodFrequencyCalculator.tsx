@@ -15,21 +15,21 @@ const VfdPeriodFrequencyCalculator: React.FC = () => {
   const [useStandardUnits, setUseStandardUnits] = useState(false);
 
   // 计算结果状态
-  const [results, setResults] = useState<{[key: string]: string}>({});
+  const [results, setResults] = useState<{[key: string]: string | boolean}>({});
 
   // 从localStorage读取历史记录
-  const loadHistory = (): {[key: string]: string}[] => {
+  const loadHistory = (): {[key: string]: string | boolean}[] => {
     const saved = localStorage.getItem('vfdCalculatorHistory');
     return saved ? JSON.parse(saved) : [];
   };
 
   // 将历史记录保存到localStorage
-  const saveHistory = (historyData: {[key: string]: string}[]) => {
+  const saveHistory = (historyData: {[key: string]: string | boolean}[]) => {
     localStorage.setItem('vfdCalculatorHistory', JSON.stringify(historyData));
   };
 
   // 计算历史记录（从localStorage初始化）
-  const [history, setHistory] = useState<{[key: string]: string}[]>(loadHistory);
+  const [history, setHistory] = useState<{[key: string]: string | boolean}[]>(loadHistory);
 
   // 处理参数输入变化
   const handleParameterChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -132,7 +132,7 @@ const VfdPeriodFrequencyCalculator: React.FC = () => {
       
       // 第2行：型号和数据
       data.push([
-        `型号: VFD-${result.maxForce}-${result.useStandardUnits ? (parseFloat(result.designDisplacement) * 1000).toString() : result.designDisplacement}`,
+        `型号: VFD-${String(result.maxForce)}-${result.useStandardUnits ? (parseFloat(String(result.designDisplacement)) * 1000).toString() : String(result.designDisplacement)}`,
         result.maxForce,
         result.dampingCoefficient,
         result.dampingExponent,
@@ -233,7 +233,7 @@ const VfdPeriodFrequencyCalculator: React.FC = () => {
   };
 
   // 导出单个计算记录
-  const exportSingleRecord = (record: {[key: string]: any}, recordNumber: number) => {
+  const exportSingleRecord = (record: {[key: string]: string | boolean}, recordNumber: number) => {
     // 创建数据数组，与批量导出保持一致的格式
     const data = [
       // 第1行：记录标题和表头
@@ -250,7 +250,7 @@ const VfdPeriodFrequencyCalculator: React.FC = () => {
       ],
       // 第2行：型号和数据
       [
-        `型号: VFD-${record.maxForce}-${record.useStandardUnits ? (parseFloat(record.designDisplacement) * 1000).toString() : record.designDisplacement}`,
+        `型号: VFD-${String(record.maxForce)}-${record.useStandardUnits ? (parseFloat(String(record.designDisplacement)) * 1000).toString() : String(record.designDisplacement)}`,
         record.maxForce,
         record.dampingCoefficient,
         record.dampingExponent,
@@ -534,7 +534,7 @@ const VfdPeriodFrequencyCalculator: React.FC = () => {
                           <div className="flex items-center">
                             <span className="text-sm font-medium text-blue-800 mr-2">型号:</span>
                             <span className="text-sm font-semibold text-blue-900">
-                                VFD-{record.maxForce}-{record.useStandardUnits ? (parseFloat(record.designDisplacement) * 1000).toString() : record.designDisplacement}
+                                VFD-{String(record.maxForce)}-{record.useStandardUnits ? (parseFloat(String(record.designDisplacement)) * 1000).toString() : String(record.designDisplacement)}
                               </span>
                           </div>
                         </div>

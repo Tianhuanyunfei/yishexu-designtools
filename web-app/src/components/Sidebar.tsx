@@ -16,7 +16,11 @@ import {
   ChevronRight
 } from 'lucide-react';
 
-const Sidebar: React.FC = () => {
+interface SidebarProps {
+  visible: boolean;
+}
+
+const Sidebar: React.FC<SidebarProps> = ({ visible }) => {
   const location = useLocation();
   
   // 为每个分类添加折叠状态管理，默认都展开
@@ -140,7 +144,9 @@ const Sidebar: React.FC = () => {
   ];
 
   return (
-    <aside className="fixed left-0 top-16 h-screen w-64 bg-white shadow-brb-lg border-r border-gray-200 z-40">
+    <aside 
+      className={`fixed left-0 top-16 h-screen w-64 bg-white shadow-brb-lg border-r border-gray-200 z-40 transition-all duration-300 ease-in-out transform ${visible ? 'translate-x-0 opacity-100' : '-translate-x-full opacity-0 pointer-events-none'}`}
+    >
       <nav className="p-4">
         <div className="space-y-4">
           {menuItems.map((menuCategory, categoryIndex) => {

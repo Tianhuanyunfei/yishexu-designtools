@@ -55,6 +55,34 @@
   @apply bg-brb-blue-600;
 }
 
+/* 隐藏数字输入框的上下箭头 */
+input[type="number"] {
+  -webkit-appearance: none;
+  -moz-appearance: textfield;
+  appearance: none;
+}
+
+/* 确保浏览器不会在聚焦时显示箭头 */
+
+/* 获得焦点时隐藏占位符 */
+input:focus::placeholder,
+select:focus::placeholder {
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+
+/* 正常状态下显示占位符 */
+input::placeholder,
+select::placeholder {
+  opacity: 1;
+  transition: opacity 0.3s ease;
+}
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
 /* 动画效果 */
 @keyframes fadeIn {
   from {
