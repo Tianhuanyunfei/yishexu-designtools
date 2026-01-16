@@ -13,12 +13,40 @@ import {
   ChevronRight
 } from 'lucide-react';
 
+// 版本更新记录接口
+interface VersionUpdate {
+  version: string;
+  date: string;
+  changes: string[];
+}
+
 const Dashboard: React.FC = () => {
   // 分类折叠状态管理
   const [collapsedCategories, setCollapsedCategories] = React.useState<{ [key: string]: boolean }>({});
   
   // 更新内容模态框显示状态
   const [showUpdateModal, setShowUpdateModal] = React.useState(false);
+  
+  // 版本更新记录
+  const versionUpdates: VersionUpdate[] = [
+    {
+      version: "3.0.2",
+      date: "2026-01-15",
+      changes: [
+        "优化侧边栏显示，默认状态改为折叠",
+        "添加顶部标题栏导航到主页功能"
+      ]
+    },
+    {
+      version: "3.0.1",
+      date: "2026-01-15",
+      changes: [
+        "修复侧边栏与折叠按钮阴影显示问题",
+        "BRB结构核算导出文件由csv改为excel",
+        "修复BRB参数表无法拖动到指定位置bug"
+      ]
+    }
+  ];
   
   // 切换分类的折叠状态
   const toggleCategory = (categoryId: number) => {
@@ -167,7 +195,7 @@ const Dashboard: React.FC = () => {
         {showUpdateModal && (
           <div className="absolute top-full right-0 mt-2 w-80 bg-white shadow-lg rounded-lg border border-gray-200 z-50 p-4">
             <div className="flex justify-between items-start mb-3">
-              <h3 className="text-lg font-semibold text-gray-900">3.0.2 版本更新内容</h3>
+              <h3 className="text-lg font-semibold text-gray-900">版本更新内容</h3>
               <button
                 onClick={() => setShowUpdateModal(false)}
                 className="text-gray-400 hover:text-gray-600 transition-colors"
@@ -177,26 +205,25 @@ const Dashboard: React.FC = () => {
                 </svg>
               </button>
             </div>
-            <div className="space-y-2 text-sm text-gray-700">
-              <div className="flex items-start space-x-2">
-                <span className="text-brb-blue-500 font-medium">•</span>
-                <span>修复侧边栏与折叠按钮阴影显示问题</span>
-              </div>
-              <div className="flex items-start space-x-2">
-                <span className="text-brb-blue-500 font-medium">•</span>
-                <span>BRB结构核算导出文件由csv改为excel</span>
-              </div>
-              <div className="flex items-start space-x-2">
-                <span className="text-brb-blue-500 font-medium">•</span>
-                <span>修复BRB参数表无法拖动到指定位置bug</span>
-              </div>
-              <div className="flex items-start space-x-2">
-                <span className="text-brb-blue-500 font-medium">•</span>
-                <span>优化侧边栏显示，默认状态改为折叠</span>
-              </div>
-            </div>
-            <div className="mt-4 pt-3 border-t border-gray-200 text-xs text-gray-500">
-              发布日期：2026-01-15
+            
+            {/* 所有版本更新记录 */}
+            <div className="space-y-6 max-h-96 overflow-y-auto pr-2">
+              {versionUpdates.map((update, index) => (
+                <div key={index} className="border-b border-gray-100 pb-3 last:border-b-0 last:pb-0">
+                  <div className="flex justify-between items-center mb-2">
+                    <h4 className="font-medium text-brb-blue-600">{update.version}</h4>
+                    <span className="text-xs text-gray-500">{update.date}</span>
+                  </div>
+                  <div className="space-y-1 text-sm text-gray-700">
+                    {update.changes.map((change, changeIndex) => (
+                      <div key={changeIndex} className="flex items-start space-x-2">
+                        <span className="text-brb-blue-500 font-medium">•</span>
+                        <span>{change}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
             </div>
           </div>
         )}
@@ -211,7 +238,7 @@ const Dashboard: React.FC = () => {
               <div className="text-xl font-bold text-gray-900">{category.name}</div>
               <button 
                 className="flex items-center justify-center w-10 h-10 bg-brb-blue-100 hover:bg-brb-blue-200 text-brb-blue-600 hover:text-brb-blue-800 transition-all duration-300 rounded-full"
-                onClick={() => toggleCategory(category.id)}
+                onClick={() => toggleCategory(Number(category.id))}
               >
                 {collapsedCategories[category.id] ? <ChevronRight className="h-6 w-6 font-bold" /> : <ChevronDown className="h-6 w-6 font-bold" />}
               </button>

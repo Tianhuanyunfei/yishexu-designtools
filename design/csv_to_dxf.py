@@ -9,7 +9,7 @@ logging.basicConfig(filename='dxf_csv_conversion.log', level=logging.INFO,
 # 全局缩放因子，默认为5
 global_scale_factor = 5
 
-# 定义默认颜色
+# 定义BYLAYER默认颜色
 def handle_color(color):
     if color == 'BYLAYER':
         return 256
@@ -192,8 +192,6 @@ def drawing(doc, msp, input_file, output_file):
     doc.saveas(output_file)
     print(f"DXF 文件已成功保存")
     logging.info(f"{input_file} 已成功转换为 {output_file} (CSV to DXF)")
-
-
 
 
 # 设置线型函数
@@ -572,18 +570,3 @@ def handle_insert(data, row, msp, doc, layer, color, linetype, lineweight, input
     msp.add_blockref(block_name, block_location, dxfattribs={"layer": layer, "color": color,
                                                              "linetype": linetype, "lineweight": lineweight,
                                                              'rotation': block_rotation})
-
-
-if __name__ == "__main__":
-# 测试转换函数
-    input_file = 'design/data/十一 copy.csv'
-    output_file = 'design/test_output.dxf'
-
-    print(f"开始转换: {input_file} -> {output_file}")
-    try:
-        csv_to_dxf(input_file, output_file)
-        print(f"转换完成")
-    except Exception as e:
-        print(f"转换失败: {str(e)}")
-        import traceback
-        traceback.print_exc()

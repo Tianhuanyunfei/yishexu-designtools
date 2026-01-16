@@ -1,4 +1,5 @@
 import React from 'react';
+import { Link } from 'react-router-dom';
 import { Building2, User, Menu, X } from 'lucide-react';
 
 interface HeaderProps {
@@ -10,15 +11,15 @@ const Header: React.FC<HeaderProps> = ({ toggleSidebar, sidebarVisible }) => {
   return (
     <header className="fixed top-0 left-0 right-0 z-50 bg-white shadow-brb-lg border-b border-gray-200">
       <div className="flex items-center justify-between px-6 py-4">
-        <div className="flex items-center space-x-4">
+        <Link to="/" className="flex items-center space-x-4 hover:no-underline">
           <div className="flex items-center space-x-3">
             <Building2 className="h-8 w-8 text-brb-blue-600" />
             <div>
-              <h1 className="text-xl font-bold text-gray-900">阻尼器设计工具</h1>
+              <h1 className="text-xl font-bold text-gray-900 hover:text-brb-blue-600 transition-colors">阻尼器设计工具</h1>
               <p className="text-sm text-gray-600">专业的阻尼器辅助设计平台</p>
             </div>
           </div>
-        </div>
+        </Link>
         
         <div className="flex items-center space-x-4">
           <div className="flex items-center space-x-2 text-sm text-gray-600">
