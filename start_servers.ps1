@@ -37,7 +37,7 @@ Write-Host "    Starting Backend Server (Port: 8000)"
 Write-Host "========================================"
 
 # Start backend server in new window
-$backendCmd = "cd /d `"$PSScriptRoot`" && python app.py"
+$backendCmd = "cd /d `"$PSScriptRoot`" && python backend/app.py"
 Start-Process cmd.exe -ArgumentList "/k", $backendCmd
 
 # Wait for backend to start
