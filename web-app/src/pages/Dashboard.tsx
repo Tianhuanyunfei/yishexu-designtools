@@ -30,6 +30,16 @@ const Dashboard: React.FC = () => {
   // 版本更新记录
   const versionUpdates: VersionUpdate[] = [
     {
+      version: "3.0.3",
+      date: "2026-01-19",
+      changes: [
+        "修改BRB挡板宽度，当方管为200时，挡板宽度为215",
+        "修复BRB材料单中当截面为十字时，灌浆重量公式取值错误问题",
+        "优化线型信息的读取写入功能，使其能正确处理图纸实际线型",
+        "增加带密码验证的开发者工具功能"
+      ]
+    },
+    {
       version: "3.0.2",
       date: "2026-01-15",
       changes: [
@@ -176,7 +186,7 @@ const Dashboard: React.FC = () => {
           <p className="text-lg text-gray-600">专业的阻尼器辅助设计平台</p>
           <div className="flex items-center space-x-2">
             <div className="bg-brb-blue-100 text-brb-blue-800 px-3 py-1 rounded-full text-sm font-medium">
-              版本 3.0.2
+              版本 {versionUpdates[0].version}
             </div>
             {/* 更新内容按钮 */}
             <button

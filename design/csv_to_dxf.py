@@ -199,16 +199,22 @@ def handle_linetype_pattern(linetype_pattern_str, linetype, input_file, layer):
     linetype_pattern = []
     if linetype_pattern_str:
         parts = linetype_pattern_str.split(";")
-        for part in parts:
-            try:
-                value = float(part.strip())
-                linetype_pattern.append(value)
-            except ValueError:
-                if linetype != "Continuous":
-                    logging.warning(
-                        f"文件 {input_file} 中图层 {layer} 的线型图案字段 '{linetype_pattern_str}' 包含无效数据，将使用空列表代替。")
-                linetype_pattern = []
-                break
+        try:
+            # 转换为浮点数
+            pattern_values = [float(part.strip()) for part in parts]
+            
+            if pattern_values:
+                # 计算所有值的绝对值之和作为总长度
+                total_length = sum(abs(v) for v in pattern_values)
+                
+                # 根据用户需求：在图案前面添加总长度
+                # 例如：108;18;18;18;0 -> [162.0, 108.0, 18.0, 18.0, 18.0, 0.0]
+                linetype_pattern = [total_length] + pattern_values
+                
+        except ValueError:
+            if linetype != "Continuous":
+                logging.warning(
+                    f"文件 {input_file} 中图层 {layer} 的线型图案字段 '{linetype_pattern_str}' 包含无效数据，将使用空列表代替。")
     return linetype_pattern
 
 
@@ -218,8 +224,7 @@ def create_layer(doc, layer, color, linetype, lineweight, linetype_description, 
         try:
             if linetype not in doc.linetypes:
                 if linetype_pattern:
-                    if len(linetype_pattern) % 2 != 0:
-                        linetype_pattern.append(0)
+                    # 保持原始线型图案，不强制要求偶数长度
                     doc.linetypes.add(
                         name=linetype,
                         pattern=linetype_pattern,

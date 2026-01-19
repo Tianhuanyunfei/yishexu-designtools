@@ -4,7 +4,53 @@ import { useToast } from '../components/Toast';
 const Settings: React.FC = () => {
   const [backgroundColor, setBackgroundColor] = useState('#f9fafb'); // 默认的bg-gray-50的十六进制颜色
   const [customColor, setCustomColor] = useState('#f9fafb');
+  const [refreshing, setRefreshing] = useState(false);
+  const [developerMode, setDeveloperMode] = useState(false);
+  const [password, setPassword] = useState('');
+  const [passwordError, setPasswordError] = useState('');
+  const [verifying, setVerifying] = useState(false);
   const { showToast } = useToast();
+  
+  // 验证密码（调用后端API）
+  const handlePasswordSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setVerifying(true);
+    setPasswordError('');
+    
+    try {
+      const response = await fetch('/api/verify/developer-password', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ password }),
+      });
+      
+      const result = await response.json();
+      
+      if (result.success) {
+        setDeveloperMode(true);
+        showToast(result.message || '开发者模式已启用', 'success');
+      } else {
+        setPasswordError(result.message || '密码错误，请重试');
+        showToast(result.message || '密码错误', 'error');
+      }
+    } catch (error) {
+      console.error('验证密码时出错:', error);
+      setPasswordError('验证失败，请检查网络连接或联系管理员');
+      showToast('验证失败，请重试', 'error');
+    } finally {
+      setVerifying(false);
+    }
+  };
+  
+  // 退出开发者模式
+  const handleExitDeveloperMode = () => {
+    setDeveloperMode(false);
+    setPassword('');
+    setPasswordError('');
+    showToast('开发者模式已关闭', 'info');
+  };
 
   // 预设颜色选项
   const presetColors = [
@@ -121,6 +167,39 @@ const Settings: React.FC = () => {
     }
   };
 
+  // 刷新BRB模版数据
+  const handleRefreshBrbTemplates = async () => {
+    // 弹出确认对话框
+    if (window.confirm('确定要刷新BRB模版数据吗？此操作将重新读取design/data目录下的所有DXF文件，并生成对应的CSV文件。')) {
+      setRefreshing(true);
+      
+      try {
+        // 调用后端API刷新BRB模版数据
+        const response = await fetch('/api/refresh/brb-templates', {
+          method: 'POST'
+        });
+        
+        if (!response.ok) {
+          throw new Error('刷新失败，请稍后重试');
+        }
+        
+        const result = await response.json();
+        
+        if (result.success) {
+          showToast('BRB模版数据刷新成功！', 'success');
+        } else {
+          showToast(result.message || '刷新失败，请稍后重试', 'error');
+        }
+        
+      } catch (error) {
+        console.error('刷新BRB模版数据时出错:', error);
+        showToast(error instanceof Error ? error.message : '刷新失败，请稍后重试', 'error');
+      } finally {
+        setRefreshing(false);
+      }
+    }
+  };
+
   return (
     <div className="card p-8">
       <h1 className="text-3xl font-bold text-gray-900 mb-8">系统设置</h1>
@@ -200,6 +279,7 @@ const Settings: React.FC = () => {
         <div>
           <h2 className="text-xl font-semibold text-gray-900 mb-4">数据管理</h2>
           <div className="space-y-6">
+            {/* 清除本地缓存数据按钮 */}
             <div className="p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
               <p className="text-sm text-yellow-800 mb-4">
                 <strong>注意：</strong>清除本地缓存数据将删除所有设计参数、项目设置和CSV编辑内容，此操作不可恢复。
@@ -212,6 +292,68 @@ const Settings: React.FC = () => {
               </button>
             </div>
           </div>
+        </div>
+        
+        {/* 开发者工具部分 */}
+        <div>
+          <h2 className="text-xl font-semibold text-gray-900 mb-4">开发者工具</h2>
+          
+          {!developerMode ? (
+            /* 密码验证表单 */
+            <div className="p-4 bg-gray-50 border border-gray-200 rounded-lg">
+              <p className="text-sm text-gray-700 mb-4">
+                请输入密码以启用开发者工具
+              </p>
+              <form onSubmit={handlePasswordSubmit} className="space-y-4">
+                <div>
+                  <input
+                    type="password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    placeholder="请输入开发者密码"
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    autoFocus
+                  />
+                  {passwordError && (
+                    <p className="text-red-600 text-sm mt-2">{passwordError}</p>
+                  )}
+                </div>
+                <button
+                  type="submit"
+                  className="bg-gray-600 hover:bg-gray-700 text-white font-medium py-2 px-6 rounded-lg transition-colors duration-200"
+                  disabled={verifying}
+                >
+                  {verifying ? '正在验证...' : '验证'}
+                </button>
+              </form>
+            </div>
+          ) : (
+            /* 开发者工具内容 */
+            <div>
+              <button
+                onClick={handleExitDeveloperMode}
+                className="mb-6 text-sm text-blue-600 hover:underline"
+              >
+                退出开发者模式
+              </button>
+              
+              <div className="space-y-6">
+                {/* 刷新BRB模版数据按钮 */}
+                <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                  <p className="text-sm text-blue-800 mb-4">
+                    <strong>提示：</strong>刷新BRB模版数据将重新读取design/data目录下的所有DXF文件，并生成对应的CSV文件。
+                  </p>
+                  <button
+                    onClick={handleRefreshBrbTemplates}
+                    className="bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-6 rounded-lg transition-colors duration-200"
+                    disabled={refreshing}
+                  >
+                    {refreshing ? '正在刷新...' : '刷新BRB模版数据'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
 
         <div className="flex justify-end space-x-4">

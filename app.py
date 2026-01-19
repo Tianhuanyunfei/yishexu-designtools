@@ -6,6 +6,10 @@ from werkzeug.utils import secure_filename
 import tempfile
 import csv
 import json
+from dotenv import load_dotenv
+
+# 加载环境变量
+load_dotenv()
 
 # 添加design目录到Python路径
 sys.path.append(os.path.join(os.path.dirname(__file__), 'design'))
@@ -17,6 +21,7 @@ try:
     from dxf_to_csv import dxf_to_csv
     from csv_to_dxf import csv_to_dxf
     from brb_materials import generate_materials_excel
+    from refresh_brb_templates import refresh_brb_templates
     print("所有后端模块导入成功")
 except Exception as e:
     print(f"导入后端模块时出错: {e}")
@@ -545,6 +550,47 @@ def csv_save_api():
         import traceback
         traceback.print_exc()
         return jsonify({'status': 'error', 'message': f'保存过程出错: {str(e)}'}), 500
+
+# 开发者密码验证API
+@app.route('/api/verify/developer-password', methods=['POST'])
+def verify_developer_password():
+    try:
+        data = request.get_json()
+        password = data.get('password')
+        
+        if not password:
+            return jsonify({'success': False, 'message': '密码不能为空'}), 400
+        
+        # 从环境变量获取正确的密码
+        correct_password = os.environ.get('DEVELOPER_PASSWORD')
+        
+        if not correct_password:
+            return jsonify({'success': False, 'message': '服务器配置错误，请联系管理员'}), 500
+        
+        if password == correct_password:
+            return jsonify({'success': True, 'message': '密码验证成功'})
+        else:
+            return jsonify({'success': False, 'message': '密码错误，请重试'})
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({'success': False, 'message': f'密码验证时出错: {str(e)}'}), 500
+
+# 刷新BRB模版数据API
+@app.route('/api/refresh/brb-templates', methods=['POST'])
+def refresh_brb_templates_api():
+    try:
+        # 调用refresh_brb_templates函数
+        success = refresh_brb_templates()
+        
+        if success:
+            return jsonify({'success': True, 'message': 'BRB模版数据刷新成功'})
+        else:
+            return jsonify({'success': False, 'message': 'BRB模版数据刷新失败'})
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({'success': False, 'message': f'刷新BRB模版数据时出错: {str(e)}'}), 500
 
 # 文件下载API
 @app.route('/api/download/file', methods=['GET'])
