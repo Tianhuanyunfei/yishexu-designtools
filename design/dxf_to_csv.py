@@ -29,10 +29,10 @@ DIMTYPE_MAPPING = {
     34: "ANGULAR"
 }
 
-# 手动定义一些常见线型的图案信息
+# 手动定义一些常见线型的图案信息（仅作为自动获取失败时的回退选项）
 COMMON_LINETYPE_PATTERNS = {
-    "点画线": [18*9, 12*9, 2*9, 2*9, 2*9],  # 示例图案，可根据实际调整
-    "虚线": [2.0*9, 1.0*9, 1.0*9]  # 示例图案，可根据实际调整
+    "点画线": [18*9, 12*9, 2*9, 2*9, 2*9],  # 仅在自动获取失败时使用
+    "虚线": [2.0*9, 1.0*9, 1.0*9]  # 仅在自动获取失败时使用
 }
 
 # 数字格式化，保留三位小数，去除末尾0
@@ -41,19 +41,39 @@ def format_number(num):
     return formatted
 
 # 获取线型函数
+
 def get_linetype_pattern(doc, linetype):
     linetype_obj = doc.linetypes.get(linetype)
     pattern = []
     if linetype_obj:
         try:
-            pattern = linetype_obj.dxf.dash_lengths
-        except AttributeError:
+            # 使用ezdxf提供的simplified_line_pattern方法获取线型图案
+            if hasattr(linetype_obj, 'simplified_line_pattern'):
+                pattern = linetype_obj.simplified_line_pattern()
+                logging.info(f"使用simplified_line_pattern()获取到的线型图案: {pattern}")
+            
+            # 如果获取到的pattern是None或空列表，尝试其他方式
+            if not pattern:
+                # 尝试多种可能的属性名获取线型图案
+                if hasattr(linetype_obj.dxf, 'dash_lengths'):
+                    pattern = linetype_obj.dxf.dash_lengths
+                elif hasattr(linetype_obj, 'pattern'):
+                    pattern = linetype_obj.pattern
+                elif hasattr(linetype_obj.dxf, 'pattern'):
+                    pattern = linetype_obj.dxf.pattern
+                elif hasattr(linetype_obj, 'dash_lengths'):
+                    pattern = linetype_obj.dash_lengths
+            
+        except Exception as e:
+            logging.warning(f"获取线型 {linetype} 的图案信息时发生错误: {str(e)}")
+            # 仅在无法自动获取时才使用手动定义的图案
             if linetype in COMMON_LINETYPE_PATTERNS:
                 pattern = COMMON_LINETYPE_PATTERNS[linetype]
-            elif linetype == "Continuous":
-                pattern = []
-            else:
-                logging.warning(f"无法获取线型 {linetype} 的图案信息，将使用空列表代替。")
+                logging.info(f"使用手动定义的图案信息: {pattern}")
+    
+    if linetype == "Continuous" or "continuous" in linetype.lower():
+        pattern = []
+        
     return pattern
 
 # 获取图层信息函数
