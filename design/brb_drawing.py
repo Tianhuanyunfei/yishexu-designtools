@@ -72,8 +72,8 @@ def update_data1(csv_data, input_param, width, height, thick, force, tube_width,
         update_cell_value(csv_data, 219, column_index_map, '覆盖值', thick + 5)
         update_cell_value(csv_data, 222, column_index_map, '覆盖值', thick + 5)
         update_cell_value(csv_data, 223, column_index_map, '覆盖值', height - thick - thick - 5)
-        update_cell_value(csv_data, 206, column_index_map, '覆盖值', tube_width + 20)
-        update_cell_value(csv_data, 209, column_index_map, '覆盖值', tube_width + 20)
+        update_cell_value(csv_data, 206, column_index_map, '覆盖值', tube_width + 20 if tube_width != 200 else tube_width + 15)
+        update_cell_value(csv_data, 209, column_index_map, '覆盖值', tube_width + 20 if tube_width != 200 else tube_width + 15)
 
         # 挡板焊缝
         update_cell_value(csv_data, 245, column_index_map, '值', f'\T1.1;C{format_number(weld)}')
@@ -153,8 +153,8 @@ def update_data2(csv_data, input_param, width, height, thick, force, tube_width,
         update_cell_value(csv_data, 182, column_index_map, '覆盖值', thick + 5)
         update_cell_value(csv_data, 185, column_index_map, '覆盖值', thick + 5)
         update_cell_value(csv_data, 186, column_index_map, '覆盖值', height + 5)
-        update_cell_value(csv_data, 175, column_index_map, '覆盖值', tube_width + 20)
-        update_cell_value(csv_data, 178, column_index_map, '覆盖值', tube_width + 20)
+        update_cell_value(csv_data, 175, column_index_map, '覆盖值', tube_width + 20 if tube_width != 200 else tube_width + 15)
+        update_cell_value(csv_data, 178, column_index_map, '覆盖值', tube_width + 20 if tube_width != 200 else tube_width + 15)
 
         # 挡板焊缝
         update_cell_value(csv_data, 200, column_index_map, '值', f'\T1.1;C{format_number(weld)}')
@@ -244,8 +244,8 @@ def update_data3(csv_data, input_param, width, height, thick, force, tube_width,
         update_cell_value(csv_data, 224, column_index_map, '覆盖值', thick + 5)
         update_cell_value(csv_data, 227, column_index_map, '覆盖值', thick + 5)
         update_cell_value(csv_data, 228, column_index_map, '覆盖值', height - thick - thick - 5)
-        update_cell_value(csv_data, 211, column_index_map, '覆盖值', tube_width + 20)
-        update_cell_value(csv_data, 214, column_index_map, '覆盖值', tube_width + 20)
+        update_cell_value(csv_data, 211, column_index_map, '覆盖值', tube_width + 20 if tube_width != 200 else tube_width + 15)
+        update_cell_value(csv_data, 214, column_index_map, '覆盖值', tube_width + 20 if tube_width != 200 else tube_width + 15)
 
         # 挡板焊缝
         update_cell_value(csv_data, 250, column_index_map, '值', f'\T1.1;C{format_number(weld)}')

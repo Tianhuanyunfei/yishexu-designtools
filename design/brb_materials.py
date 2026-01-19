@@ -209,7 +209,7 @@ def generate_materials_excel(project_name, param_tables, project_folder=None, sa
                 # 填充宽度
                 ws.cell(row=start_row, column=6, value=height) # 芯板宽度
                 ws.cell(row=start_row+1, column=6, value=(width- think)/2) # 翼缘板宽度
-                ws.cell(row=start_row+2, column=6, value=pipe_width+20) # 挡板宽度
+                ws.cell(row=start_row+2, column=6, value=pipe_width+20 if pipe_width != 200 else pipe_width+15) # 挡板宽度
                 ws.cell(row=start_row+3, column=6, value=pipe_width*4) # 方管宽度
                 ws.cell(row=start_row+5, column=6, value=pipe_width) # 灌浆宽度
 
@@ -229,14 +229,14 @@ def generate_materials_excel(project_name, param_tables, project_folder=None, sa
 
                 # 填充单重,保留两位小数
                 for row in range(start_row, start_row+4):
-                    ws.cell(row=row, column=9, value=f"=E{row}*F{row}*G{row}*{0.00000785:.8f}").number_format = '0.00' # 芯板数量
-                ws.cell(row=start_row+5, column=9, value=f"=E{start_row+6}*F{start_row+6}*G{start_row+6}*{0.0000021:.8f}").number_format = '0.00' # 灌浆数量
+                    ws.cell(row=row, column=9, value=f"=E{row}*F{row}*G{row}*{0.00000785:.8f}").number_format = '0.00' # 钢板重量
+                ws.cell(row=start_row+5, column=9, value=f"=E{start_row+5}*F{start_row+5}*G{start_row+5}*{0.0000021:.8f}").number_format = '0.00' # 灌浆重量
 
                 # 填充总重
                 for row in range(start_row, start_row+4):
-                    ws.cell(row=row, column=10, value=f"=I{row}*H{row}").number_format = '0.00' # 芯板总数量
-                ws.cell(row=start_row+5, column=10, value=f"=I{start_row+6}*H{start_row+6}").number_format = '0.00' # 灌浆总数量 
-
+                    ws.cell(row=row, column=10, value=f"=I{row}*H{row}").number_format = '0.00' # 钢板总重
+                ws.cell(row=start_row+5, column=10, value=f"=I{start_row+5}*H{start_row+5}").number_format = '0.00' # 灌浆总重 
+                
                 # 合计重量
                 ws.cell(row=start_row+4, column=10, value=f"=SUM(J{start_row}:J{start_row+3})").number_format = '0.00' # 钢材总重
                 ws.cell(row=start_row+6, column=10, value=f"=SUM(J{start_row+4}:J{start_row+5})").number_format = '0.00' # 钢材加灌浆总重量
@@ -301,7 +301,7 @@ def generate_materials_excel(project_name, param_tables, project_folder=None, sa
                 ws.cell(row=start_row, column=6, value=height- think- think) # 芯板宽度
                 ws.cell(row=start_row+1, column=6, value=width) # 翼缘板1宽度
                 ws.cell(row=start_row+2, column=6, value=(width- think)/2) # 翼缘板2宽度
-                ws.cell(row=start_row+3, column=6, value=pipe_width+20) # 挡板宽度
+                ws.cell(row=start_row+3, column=6, value=pipe_width+20 if pipe_width != 200 else pipe_width+15) # 挡板宽度
                 ws.cell(row=start_row+4, column=6, value=pipe_width*4) # 方管宽度
                 ws.cell(row=start_row+6, column=6, value=pipe_width) # 灌浆宽度
 
