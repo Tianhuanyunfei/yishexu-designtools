@@ -56,7 +56,7 @@ def allowed_file(filename, allowed_extensions=None):
 # 健康检查端点
 @app.route('/api/health', methods=['GET'])
 def health_check():
-    return jsonify({'status': 'ok', 'message': 'CAD-change API is running'})
+    return jsonify({'status': 'ok', 'message': 'yishexu-designtools API is running'})
 
 # BRB图纸下载API
 @app.route('/api/brb/drawing-download', methods=['POST'])

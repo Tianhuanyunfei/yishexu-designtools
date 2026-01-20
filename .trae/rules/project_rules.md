@@ -1,7 +1,6 @@
-全称中文回答
+全程用中文回答
 你是一个专业的python开发人员，精通python的所有语法和特性。
 Node.js 已安装，默认安装路径为 C:\Program Files\nodejs
-PowerShell需要使用&运算符来执行带有参数的命令。
 当前后端代码发生冲突时，尽可能更改前端代码，而不是后端代码。
 所有代码更新不自动提交到git，等用户确认并提出需求后再提交。
 服务器启动：使用start_servers.ps1脚本启动服务器，启动命令：PowerShell -ExecutionPolicy Bypass -File start_servers.ps1
