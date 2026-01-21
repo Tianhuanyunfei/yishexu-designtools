@@ -20,7 +20,7 @@ interface GeneratedFile {
   id: string;
   name: string;
   path: string;
-  type: 'drawing' | 'materials';
+  type: 'drawing' | 'materials' | 'tube_layout';
   tableIndex?: number; // 新增：参数表索引，用于标识该文件对应的参数表
 }
 
@@ -113,6 +113,7 @@ const BrbDrawing: React.FC = () => {
   // 添加加载状态
   const [isGeneratingDrawings, setIsGeneratingDrawings] = useState(false);
   const [isGeneratingMaterials, setIsGeneratingMaterials] = useState(false);
+  const [isGeneratingTubeLayout, setIsGeneratingTubeLayout] = useState(false);
 
 
 
@@ -661,6 +662,11 @@ const BrbDrawing: React.FC = () => {
     }
   };
 
+
+
+          
+
+
   // 新建项目功能
   const handleNewProject = () => {
     if (parameterTables.some(table => table.lengthQuantityTable.some(row => row.quantity)) || projectName) {
@@ -806,6 +812,145 @@ const BrbDrawing: React.FC = () => {
     localStorage.removeItem('brb_drawing_projectName');
     localStorage.removeItem('brb_drawing_totalQuantity');
     localStorage.removeItem('brb_drawing_parameterTables');
+  };
+
+  // 生成方管排布图
+  const generateTubeLayout = async () => {
+    if (!projectName || !projectName.trim()) {
+      showToast('请输入项目名称！', 'error');
+      return;
+    }
+
+    if (parameterTables.length === 0) {
+      showToast('请添加至少一个参数表！', 'error');
+      return;
+    }
+
+    try {
+      setIsGeneratingTubeLayout(true);
+      showToast('正在生成方管排布图，请稍候...', 'info');
+
+      const validParameterTables = parameterTables.map(table => {
+        const templateValue = table.template || '王一';
+        return {
+          ...table,
+          template: templateValue,
+          template_type: templateValue
+        };
+      });
+
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => {
+        controller.abort();
+      }, 60000);
+
+      const response = await fetch('/api/brb/tube-layout', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          projectName,
+          parameterTables: validParameterTables,
+          totalQuantity: totalQuantity
+        }),
+        signal: controller.signal
+      });
+
+      clearTimeout(timeoutId);
+
+      if (!response.ok) {
+        let errorData;
+        try {
+          errorData = await response.json();
+        } catch (parseError) {
+          errorData = { message: '服务器返回错误响应' };
+        }
+        throw new Error(errorData.message || '生成方管排布图失败');
+      }
+
+      const contentType = response.headers.get('content-type');
+
+      if (contentType && contentType.includes('application/json')) {
+        const result = await response.json();
+        console.log('生成方管排布图结果:', result);
+
+        if (result.result && result.result.length > 0) {
+          console.log('生成的文件:', result.result);
+
+          const newFiles: GeneratedFile[] = result.result.map((fileName: string, index: number) => ({
+            id: Date.now().toString() + Math.random().toString(36).substring(2, 9) + index,
+            name: fileName,
+            path: fileName,
+            type: 'tube_layout',
+            tableIndex: index
+          }));
+
+          setGeneratedFiles(prev => [...prev, ...newFiles]);
+
+          setTimeout(() => {
+            const filesContainer = document.getElementById('generated-files-container');
+            if (filesContainer) {
+              filesContainer.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            }
+          }, 100);
+
+          const fileNames = newFiles.map(file => `• ${file.name}`).join('\n');
+          showToast(`方管排布图生成成功！\n\n生成的文件:\n${fileNames}`, 'success');
+        } else {
+          showToast('方管排布图生成成功！', 'success');
+        }
+      } else {
+        console.log('直接返回了文件流');
+
+        const contentDisposition = response.headers.get('content-disposition');
+        let fileName = `${projectName} 方管排布图.dxf`;
+        if (contentDisposition) {
+          const matches = /filename="([^"]+)"/.exec(contentDisposition);
+          if (matches && matches[1]) {
+            fileName = matches[1];
+          }
+        }
+
+        const blob = await response.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = fileName;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        window.URL.revokeObjectURL(url);
+
+        const newFile: GeneratedFile = {
+          id: Date.now().toString() + Math.random().toString(36).substring(2, 9),
+          name: fileName,
+          path: `tube_layout_${Date.now()}.dxf`,
+          type: 'tube_layout',
+          tableIndex: 0
+        };
+
+        setGeneratedFiles(prev => [...prev, newFile]);
+
+        setTimeout(() => {
+          const filesContainer = document.getElementById('generated-files-container');
+          if (filesContainer) {
+            filesContainer.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          }
+        }, 100);
+
+        showToast(`方管排布图生成成功！文件: ${newFile.name}`, 'success');
+      }
+    } catch (error: any) {
+      clearTimeout((error as any).timeoutId);
+      if ((error as any).name === 'AbortError') {
+        showToast('生成方管排布图超时，请检查网络连接或稍后重试', 'error');
+      } else {
+        showToast(`生成方管排布图失败: ${error.message}`, 'error');
+      }
+    } finally {
+      setIsGeneratingTubeLayout(false);
+    }
   };
 
   // 加载项目数据
@@ -1368,7 +1513,7 @@ const BrbDrawing: React.FC = () => {
         </div>
       </div>
       
-      {/* 生成图纸和材料单按钮（移到参数表右下角） */}
+      {/* 生成图纸、材料单和方管排布图按钮 */}
       <div className="flex justify-end space-x-3 mt-4">
         <button 
           className="btn-primary flex items-center space-x-2 disabled:opacity-70 disabled:cursor-not-allowed"
@@ -1385,6 +1530,16 @@ const BrbDrawing: React.FC = () => {
         >
           <Box className="h-4 w-4" />
           <span>{isGeneratingMaterials ? '生成中...' : '生成材料单'}</span>
+        </button>
+        <button 
+          className="btn-primary flex items-center space-x-2 disabled:opacity-70 disabled:cursor-not-allowed"
+          onClick={generateTubeLayout}
+          disabled={isGeneratingTubeLayout}
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+          </svg>
+          <span>{isGeneratingTubeLayout ? '生成中...' : '生成方管排布图'}</span>
         </button>
       </div>
       
@@ -1466,12 +1621,12 @@ const BrbDrawing: React.FC = () => {
               </thead>
               <tbody>
                 {generatedFiles.map((file) => (
-                  <tr key={file.id} className="hover:bg-gray-50">
+                  <tr key={file.id} className="hover:bg-gray-50" data-file-id={file.id}>
                     <td className="border border-gray-300 px-4 py-2 text-sm text-gray-900">
                       {file.name}
                     </td>
                     <td className="border border-gray-300 px-4 py-2 text-sm text-gray-600">
-                      {file.type === 'drawing' ? '图纸' : '材料单'}
+                      {file.type === 'drawing' ? '图纸' : file.type === 'tube_layout' ? '方管排布图' : '材料单'}
                     </td>
                     <td className="border border-gray-300 px-4 py-2 flex space-x-2">
                       <button 
@@ -1504,6 +1659,44 @@ const BrbDrawing: React.FC = () => {
                                   totalQuantity: totalQuantity
                                 })
                               });
+                            } else if (file.type === 'tube_layout') {
+                              // 对于方管排布图，使用文件下载API
+                              const downloadUrl = `/api/download/file?path=${encodeURIComponent(file.name)}`;
+                              response = await fetch(downloadUrl, {
+                                method: 'GET',
+                                headers: {
+                                  'Content-Type': 'application/json',
+                                }
+                              });
+                              
+                              // 如果API返回JSON，说明需要重新生成文件
+                              if (response.headers.get('content-type')?.includes('application/json')) {
+                                const errorData = await response.json();
+                                if (errorData.status === 'error') {
+                                  // 重新调用生成API获取文件
+                                  // 验证并处理parameterTables，确保每个表都有有效的template和template_type值
+                                  const validParameterTables = parameterTables.map(table => {
+                                    const templateValue = table.template || '王一';
+                                    return {
+                                      ...table,
+                                      template: templateValue, // 保持template字段
+                                      template_type: templateValue // 添加template_type字段，与template值相同
+                                    };
+                                  });
+                                  
+                                  response = await fetch('/api/brb/tube-layout', {
+                                    method: 'POST',
+                                    headers: {
+                                      'Content-Type': 'application/json',
+                                    },
+                                    body: JSON.stringify({
+                                      projectName,
+                                      parameterTables: validParameterTables,
+                                      totalQuantity: totalQuantity
+                                    })
+                                  });
+                                }
+                              }
                             } else {
                               // 对于图纸，只发送该文件对应的参数表
                               const tableIndex = file.tableIndex !== undefined ? file.tableIndex : 0;
@@ -1568,8 +1761,8 @@ const BrbDrawing: React.FC = () => {
                         className="btn-danger text-sm flex items-center space-x-1"
                         onClick={async () => {
                           try {
-                            // 对于材料单和使用虚拟路径的图纸，我们不需要调用后端API来删除文件
-                            if (file.type !== 'materials' && !file.path.startsWith('drawing_')) {
+                            // 对于材料单、使用虚拟路径的图纸和方管排布图，我们不需要调用后端API来删除文件
+                            if (file.type !== 'materials' && !file.path.startsWith('drawing_') && !file.path.startsWith('tube_layout_')) {
                               // 对于实际保存到磁盘的图纸，调用后端API删除文件
                               const response = await fetch('/api/download/delete', {
                                 method: 'POST',

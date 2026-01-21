@@ -279,6 +279,29 @@ def register_routes(app):
                                     materials_buffer.seek(0)
                                     # 将材料单添加到ZIP文件
                                     zipf.writestr(f'{project_name}_材料单.xlsx', materials_buffer.read())
+                    elif file_type == 'tube_layout':
+                        # 生成方管排布图
+                        import sys
+                        import os
+                        # 添加design目录到Python路径
+                        design_dir = os.path.join(os.path.dirname(__file__), '..', '..', 'design')
+                        sys.path.insert(0, design_dir)
+                        from brb_tube_layout import TubeLayoutGenerator
+                        
+                        # 创建生成器实例
+                        generator = TubeLayoutGenerator()
+                        
+                        # 生成方管排布图
+                        tube_layout_files = generator.generate_tube_layout(project_name, parameter_tables)
+                        
+                        # 添加方管排布图到ZIP文件
+                        for file_name in tube_layout_files:
+                            # 在tube_layout目录下查找文件
+                            tube_layout_dir = os.path.join(os.path.dirname(__file__), '..', '..', 'design', 'data', 'tube_layout')
+                            file_path = os.path.join(tube_layout_dir, file_name)
+                            if os.path.exists(file_path):
+                                with open(file_path, 'rb') as f:
+                                    zipf.writestr(file_name, f.read())
                     else:
                         # 生成图纸
                         if table_index is not None and table_index < len(parameter_tables):
@@ -570,6 +593,42 @@ def register_routes(app):
             traceback.print_exc()
             return jsonify({'success': False, 'message': f'刷新BRB模版数据时出错: {str(e)}'}), 500
 
+    # 方管排布图生成API
+    @app.route('/api/brb/tube-layout', methods=['POST'])
+    def brb_tube_layout_api():
+        try:
+            import sys
+            import os
+            
+            # 添加design目录到Python路径
+            design_dir = os.path.join(os.path.dirname(__file__), '..', '..', 'design')
+            sys.path.insert(0, design_dir)
+            
+            from brb_tube_layout import TubeLayoutGenerator
+            
+            data = request.get_json()
+            if not data:
+                return jsonify({'status': 'error', 'message': '无有效数据'}), 400
+            
+            project_name = data.get('projectName')
+            parameter_tables = data.get('parameterTables')
+            total_quantity = data.get('totalQuantity')
+            
+            if not project_name or not parameter_tables:
+                return jsonify({'status': 'error', 'message': '缺少必要参数'}), 400
+            
+            # 创建生成器实例
+            generator = TubeLayoutGenerator()
+            
+            # 生成方管排布图
+            result = generator.generate_tube_layout(project_name, parameter_tables)
+            
+            return jsonify({'status': 'success', 'message': '方管排布图生成完成', 'result': result})
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            return jsonify({'status': 'error', 'message': f'生成方管排布图时出错: {str(e)}'}), 500
+
     # 文件下载API
     @app.route('/api/download/file', methods=['GET'])
     def download_file():
@@ -579,8 +638,15 @@ def register_routes(app):
             if not file_path:
                 return jsonify({'status': 'error', 'message': '缺少文件路径参数'}), 400
             
-            # 验证文件路径是否安全
-            is_safe, abs_file_path = validate_file_path(file_path)
+            # 检查是否是tube_layout文件
+            if (file_path.startswith('_tube_layout_') or '_方管排布_' in file_path) and file_path.endswith('.dxf'):
+                # 在tube_layout目录下查找文件
+                tube_layout_dir = os.path.join(os.path.dirname(__file__), '..', '..', 'design', 'data', 'tube_layout')
+                abs_file_path = os.path.join(tube_layout_dir, file_path)
+                is_safe = os.path.exists(abs_file_path)
+            else:
+                # 验证文件路径是否安全
+                is_safe, abs_file_path = validate_file_path(file_path)
             
             if not is_safe:
                 return jsonify({'status': 'error', 'message': '文件路径不安全'}), 403
@@ -650,8 +716,15 @@ def register_routes(app):
             if not file_path:
                 return jsonify({'status': 'error', 'message': '缺少文件路径参数'}), 400
             
-            # 验证文件路径是否安全
-            is_safe, abs_file_path = validate_file_path(file_path)
+            # 检查是否是tube_layout文件
+            if file_path.endswith('.dxf') and '_方管排布_' in file_path:
+                # 在tube_layout目录下查找文件
+                tube_layout_dir = os.path.join(os.path.dirname(__file__), '..', '..', 'design', 'data', 'tube_layout')
+                abs_file_path = os.path.join(tube_layout_dir, file_path)
+                is_safe = os.path.exists(abs_file_path)
+            else:
+                # 验证文件路径是否安全
+                is_safe, abs_file_path = validate_file_path(file_path)
             
             if not is_safe:
                 return jsonify({'status': 'error', 'message': '文件路径不安全'}), 403

@@ -40,9 +40,10 @@ class TubeLayoutGenerator:
             tube_data = self.process_frontend_data(parameter_tables)
             logging.info(f"处理后的数据: {tube_data}")
             
+            # 如果没有有效的方管数据，报错
             if not tube_data:
-                logging.warning("没有有效的方管数据")
-                return []
+                logging.error("没有有效的方管数据")
+                raise ValueError("没有有效的方管数据")
             
             # 2. 按方管宽度分组
             grouped_tubes = self.group_by_tube_width(tube_data)
@@ -102,9 +103,14 @@ class TubeLayoutGenerator:
             dxf_file = self.convert_to_dxf(all_cutting_plans, project_name)
             logging.info(f"生成的DXF文件: {dxf_file}")
             
-            return [dxf_file]
+            # 提取文件名，只返回文件名而不是完整路径
+            dxf_filename = os.path.basename(dxf_file)
+            logging.info(f"返回的DXF文件名: {dxf_filename}")
+            
+            return [dxf_filename]
         except Exception as e:
             logging.error(f"生成方管排布图时出错: {e}")
+            # 当数据无法读取时，报错，不要使用测试函数
             raise
     
     def process_frontend_data(self, parameter_tables):
@@ -115,24 +121,94 @@ class TubeLayoutGenerator:
         """
         tube_data = []
         
-        for table in parameter_tables:
+        logging.info(f"收到的参数表数量: {len(parameter_tables)}")
+        
+        for i, table in enumerate(parameter_tables):
+            logging.info(f"处理第 {i+1} 个参数表: {table}")
+            
             # 获取方管宽度
-            tube_width = int(table.get('tubeWidth', 0))
+            tube_width = 0
+            parameters = table.get('parameters', {})
+            if parameters:
+                # 处理 JSON 文件中的数据结构
+                tube_width = parameters.get('方管宽度(mm)', 0)
+            else:
+                # 处理前端传递的数据结构
+                tube_width = table.get('tubeWidth', 0)
+            logging.info(f"方管宽度原始值: {tube_width}, 类型: {type(tube_width)}")
+            try:
+                tube_width = int(tube_width)
+                logging.info(f"转换后方管宽度: {tube_width}")
+            except (ValueError, TypeError) as e:
+                logging.error(f"转换方管宽度时出错: {e}")
+                continue
             if tube_width <= 0:
+                logging.warning(f"方管宽度无效: {tube_width}")
                 continue
             
             # 获取屈服承载力
-            yield_force = int(table.get('designForce', 0))
+            yield_force = 0
+            if 'design_force' in table:
+                # 处理 JSON 文件中的数据结构
+                yield_force = table.get('design_force', 0)
+            else:
+                # 处理前端传递的数据结构
+                yield_force = table.get('designForce', 0)
+            logging.info(f"屈服承载力原始值: {yield_force}, 类型: {type(yield_force)}")
+            try:
+                yield_force = int(yield_force)
+                logging.info(f"转换后屈服承载力: {yield_force}")
+            except (ValueError, TypeError) as e:
+                logging.error(f"转换屈服承载力时出错: {e}")
+                yield_force = 0
             
             # 处理长度-数量对应表
-            length_quantity_table = table.get('lengthQuantityTable', [])
-            for item in length_quantity_table:
-                length = int(item.get('length', 0))
-                quantity = int(item.get('quantity', 0))
+            length_quantity_table = []
+            if 'length_quantity' in table:
+                # 处理 JSON 文件中的数据结构
+                length_quantity_table = table.get('length_quantity', [])
+            else:
+                # 处理前端传递的数据结构
+                length_quantity_table = table.get('lengthQuantityTable', [])
+            logging.info(f"长度-数量对应表: {length_quantity_table}, 类型: {type(length_quantity_table)}")
+            if not isinstance(length_quantity_table, list):
+                logging.warning("长度-数量对应表不是列表类型")
+                continue
+            
+            logging.info(f"长度-数量对应表长度: {len(length_quantity_table)}")
+            
+            for j, item in enumerate(length_quantity_table):
+                logging.info(f"处理第 {j+1} 个长度-数量项: {item}, 类型: {type(item)}")
+                
+                length = 0
+                quantity = 0
+                if isinstance(item, list) and len(item) >= 2:
+                    # 处理 JSON 文件中的数据结构
+                    length = item[0]
+                    quantity = item[1]
+                elif isinstance(item, dict):
+                    # 处理前端传递的数据结构
+                    length = item.get('length', 0)
+                    quantity = item.get('quantity', 0)
+                else:
+                    logging.warning("长度-数量项不是列表类型或字典类型")
+                    continue
+                
+                logging.info(f"长度原始值: {length}, 类型: {type(length)}")
+                logging.info(f"数量原始值: {quantity}, 类型: {type(quantity)}")
+                
+                try:
+                    length = int(length)
+                    quantity = int(quantity)
+                    logging.info(f"转换后长度: {length}, 转换后数量: {quantity}")
+                except (ValueError, TypeError) as e:
+                    logging.error(f"转换长度或数量时出错: {e}")
+                    continue
                 
                 if length > 0 and quantity > 0:
                     # 方管长度 = 产品长度 - 300
                     tube_length = length - 300
+                    logging.info(f"产品长度: {length}, 方管长度: {tube_length}")
                     if tube_length > 0:
                         tube_data.append({
                             'tube_width': tube_width,
@@ -141,7 +217,9 @@ class TubeLayoutGenerator:
                             'yield_force': yield_force,
                             'product_length': length
                         })
+                        logging.info(f"添加方管数据: {{'tube_width': {tube_width}, 'tube_length': {tube_length}, 'quantity': {quantity}, 'yield_force': {yield_force}, 'product_length': {length}}}")
         
+        logging.info(f"处理完成，生成的方管数据: {tube_data}")
         return tube_data
     
     def group_by_tube_width(self, tube_data):
@@ -188,7 +266,7 @@ class TubeLayoutGenerator:
                 })
         
         # 余料拼接逻辑
-        leftover = 0  # 上一根原材的剩余长度
+        leftovers = []  # 记录多根原材的剩余长度
         
         # 贪心算法：每次尝试填充一根原材
         while remaining_tubes:
@@ -200,7 +278,7 @@ class TubeLayoutGenerator:
             perfect_cut_found = False
             
             # 只有当没有余料或者余料已被使用时，才考虑完美切割方案
-            if leftover == 0 and remaining_tubes:
+            if not leftovers and remaining_tubes:
                 # 统计剩余方管中每种长度的数量
                 length_counts = {}
                 for tube in remaining_tubes:
@@ -232,55 +310,120 @@ class TubeLayoutGenerator:
             
             # 如果没有找到完美切割方案，再考虑拼接余料
             if not perfect_cut_found:
-                # 如果有余料且大于400mm，应用到当前原材的第一根方管
-                if leftover > 400 and remaining_tubes:
+                # 如果有余料且大于600mm，应用到当前原材的第一根方管
+                if leftovers and remaining_tubes:
                     # 尝试找到合适的方管来拼接余料
                     found = False
-                    for i, tube in enumerate(remaining_tubes):
-                        if tube['tube_length'] > leftover and tube['tube_length'] - leftover > 400:
-                            # 创建拼接后的方管，记录拼接信息
-                            spliced_tube = {
-                                'tube_length': tube['tube_length'] - leftover,
-                                'product_length': tube['product_length'],
-                                'yield_force': tube['yield_force'],
-                                'tube_width': tube['tube_width'],
-                                'spliced_from': leftover,  # 记录拼接的放料长度
-                                'original_length': tube['tube_length']  # 记录原需求长度
-                            }
-                            
-                            # 使用拼接后的方管
-                            current_raw.append(spliced_tube)
-                            remaining_length -= spliced_tube['tube_length']
-                            remaining_tubes.pop(i)
-                            leftover = 0  # 余料已使用
-                            found = True
+                    for i, leftover in enumerate(leftovers):
+                        if leftover > 600:
+                            for j, tube in enumerate(remaining_tubes):
+                                if tube['tube_length'] > leftover and tube['tube_length'] - leftover > 600:
+                                    # 创建拼接后的方管，记录拼接信息
+                                    spliced_tube = {
+                                        'tube_length': tube['tube_length'] - leftover,
+                                        'product_length': tube['product_length'],
+                                        'yield_force': tube['yield_force'],
+                                        'tube_width': tube['tube_width'],
+                                        'spliced_from': leftover,  # 记录拼接的放料长度
+                                        'original_length': tube['tube_length']  # 记录原需求长度
+                                    }
+                                    
+                                    # 使用拼接后的方管
+                                    current_raw.append(spliced_tube)
+                                    remaining_length -= spliced_tube['tube_length']
+                                    remaining_tubes.pop(j)
+                                    leftovers.pop(i)  # 余料已使用，从列表中移除
+                                    found = True
+                                    break
+                        if found:
                             break
                     
                     if not found:
                         # 如果没有找到合适的方管，放弃拼接，继续正常切割
-                        leftover = 0
+                        leftovers = []
                 
                 # 尝试从剩余方管中选择合适的方管填充
-                i = 0
-                while i < len(remaining_tubes) and remaining_length > 0:
-                    tube = remaining_tubes[i]
-                    if tube['tube_length'] <= remaining_length:
+                # 优化算法：尝试不同的方管组合，找到余料最小的组合
+                # 1. 首先尝试生成所有可能的方管组合，找到余料最小的组合
+                best_combination = None
+                best_leftover = remaining_length
+                
+                # 限制尝试的组合数量，避免性能问题
+                max_combinations = 1000
+                combination_count = 0
+                
+                # 生成所有可能的方管组合
+                def generate_combinations(start_index, current_combination, current_length):
+                    nonlocal best_combination, best_leftover, combination_count
+                    
+                    # 检查当前组合
+                    leftover = remaining_length - current_length
+                    if leftover >= 0 and leftover < best_leftover:
+                        best_leftover = leftover
+                        best_combination = current_combination.copy()
+                    
+                    # 如果已经达到最大组合数量，停止
+                    combination_count += 1
+                    if combination_count >= max_combinations:
+                        return
+                    
+                    # 如果剩余长度不足，停止
+                    if current_length >= remaining_length:
+                        return
+                    
+                    # 尝试添加下一个方管
+                    for i in range(start_index, len(remaining_tubes)):
+                        tube = remaining_tubes[i]
+                        if current_length + tube['tube_length'] <= remaining_length:
+                            current_combination.append(i)
+                            generate_combinations(i + 1, current_combination, current_length + tube['tube_length'])
+                            current_combination.pop()
+                
+                # 生成所有可能的方管组合
+                generate_combinations(0, [], 0)
+                
+                # 2. 如果找到更好的组合，使用它
+                if best_combination and best_leftover <= 600:
+                    # 从剩余方管中移除选中的方管
+                    # 注意：需要按索引从大到小排序，避免移除前面的方管后，后面的方管索引发生变化
+                    best_combination.sort(reverse=True)
+                    for i in best_combination:
+                        tube = remaining_tubes[i]
                         current_raw.append(tube)
                         remaining_length -= tube['tube_length']
                         remaining_tubes.pop(i)
-                    else:
-                        i += 1
+                else:
+                    # 3. 如果没有找到更好的组合，使用原来的贪心算法
+                    # 3.1 首先填充大长度方管（从剩余方管列表的开始位置，因为已经按长度降序排序）
+                    i = 0
+                    while i < len(remaining_tubes) and remaining_length > 600:
+                        tube = remaining_tubes[i]
+                        if tube['tube_length'] <= remaining_length:
+                            current_raw.append(tube)
+                            remaining_length -= tube['tube_length']
+                            remaining_tubes.pop(i)
+                        else:
+                            i += 1
+                    
+                    # 3.2 然后尝试填充小长度方管（从剩余方管列表的末尾开始，因为小长度方管在列表末尾）
+                    # 这样可以尝试将小长度方管填充到剩余空间中，充分利用原材
+                    i = len(remaining_tubes) - 1
+                    while i >= 0 and remaining_length > 600:
+                        tube = remaining_tubes[i]
+                        if tube['tube_length'] <= remaining_length:
+                            current_raw.append(tube)
+                            remaining_length -= tube['tube_length']
+                            remaining_tubes.pop(i)
+                        i -= 1
             
             # 为当前原材生成切割方案
             if current_raw:
                 # 计算最终剩余长度
                 final_leftover = remaining_length
                 
-                # 如果剩余长度大于400mm，保存为下一次拼接的余料
-                if final_leftover > 400:
-                    leftover = final_leftover
-                else:
-                    leftover = 0
+                # 如果剩余长度大于600mm，保存为下一次拼接的余料
+                if final_leftover > 600:
+                    leftovers.append(final_leftover)
                 
                 # 记录拼接关系
                 splice_info = {
@@ -288,9 +431,9 @@ class TubeLayoutGenerator:
                     'to_plan': None,
                     'length': 0
                 }
-                if leftover > 0:
+                if final_leftover > 600:
                     splice_info['from_plan'] = plan_id
-                    splice_info['length'] = leftover
+                    splice_info['length'] = final_leftover
                 
                 # 为当前原材生成切割方案
                 cutting_plan = {
@@ -301,14 +444,14 @@ class TubeLayoutGenerator:
                     'tubes': current_raw,
                     'pieces': len(current_raw),
                     'raw_materials': 1,
-                    'splice': leftover > 0,
+                    'splice': final_leftover > 600,
                     'splice_info': splice_info
                 }
                 
                 cutting_plans.append(cutting_plan)
                 
                 # 如果下一个方案会使用当前方案的余料，记录目标方案
-                if leftover > 0:
+                if final_leftover > 400:
                     # 只有当还有剩余方管需要处理时，才设置to_plan
                     if remaining_tubes:
                         cutting_plan['splice_info']['to_plan'] = plan_id + 1
@@ -433,44 +576,55 @@ class TubeLayoutGenerator:
             
             # 确保项目名称是字符串，移除特殊字符
             project_name = str(project_name) if project_name else 'unnamed'
-            # 移除可能导致路径问题的字符
+            # 移除可能导致路径问题的字符，允许中文字符
             import re
-            safe_project_name = re.sub(r'[^a-zA-Z0-9_-]', '', project_name)
+            safe_project_name = re.sub(r'[^\u4e00-\u9fa5a-zA-Z0-9_-]', '', project_name)
             safe_project_name = safe_project_name[:20]  # 限制长度
+            # 确保safe_project_name不为空
+            safe_project_name = safe_project_name if safe_project_name else 'unnamed'
             
-            # 使用英文文件名，避免中文路径问题
-            dxf_file = os.path.join(dxf_dir, f'{safe_project_name}_tube_layout.dxf')
+            # 使用项目名和时间戳作为文件名，确保唯一性，避免中文路径问题
+            import datetime
+            timestamp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
+            dxf_file = os.path.join(dxf_dir, f'{safe_project_name}_方管排布_{timestamp}.dxf')
             
-            # 合并相同的切割方案
+            # 不合并有拼接关系的方案，因为拼接关系是一对一的
             merged_plans = []
             plan_groups = {}
             
             for plan in cutting_plans:
-                # 定义一个唯一的键来标识相同的切割方案
-                # 包括：方管宽度、原材长度、方管段信息（长度、屈服力、拼接信息）
-                key_parts = [
-                    plan['tube_width'],
-                    plan['raw_length'],
-                    tuple((
-                        tube['tube_length'],
-                        tube['yield_force'],
-                        tube.get('spliced_from'),
-                        tube.get('original_length')
-                    ) for tube in plan['tubes'])
-                ]
-                plan_key = tuple(key_parts)
+                # 检查是否有拼接关系
+                has_splice = plan.get('splice', False) or any('spliced_from' in tube for tube in plan['tubes'])
                 
-                # 如果是相同的方案，增加数量
-                if plan_key in plan_groups:
-                    plan_groups[plan_key]['raw_materials'] += plan['raw_materials']
+                if has_splice:
+                    # 有拼接关系的方案不合并，直接添加
+                    merged_plans.append(plan)
                 else:
-                    # 新建一个方案副本并添加到分组
-                    plan_copy = plan.copy()
-                    plan_copy['raw_materials'] = plan['raw_materials']
-                    plan_groups[plan_key] = plan_copy
+                    # 定义一个唯一的键来标识相同的切割方案
+                    # 包括：方管宽度、原材长度、方管段信息（长度、屈服力、拼接信息）
+                    key_parts = [
+                        plan['tube_width'],
+                        plan['raw_length'],
+                        tuple((
+                            tube['tube_length'],
+                            tube['yield_force'],
+                            tube.get('spliced_from'),
+                            tube.get('original_length')
+                        ) for tube in plan['tubes'])
+                    ]
+                    plan_key = tuple(key_parts)
+                    
+                    # 如果是相同的方案，增加数量
+                    if plan_key in plan_groups:
+                        plan_groups[plan_key]['raw_materials'] += plan['raw_materials']
+                    else:
+                        # 新建一个方案副本并添加到分组
+                        plan_copy = plan.copy()
+                        plan_copy['raw_materials'] = plan['raw_materials']
+                        plan_groups[plan_key] = plan_copy
             
             # 将合并后的方案转换为列表
-            merged_plans = list(plan_groups.values())
+            merged_plans.extend(list(plan_groups.values()))
             
             return self.generate_dxf_directly(dxf_file, project_name, merged_plans)
         except Exception as e:
@@ -488,14 +642,6 @@ class TubeLayoutGenerator:
         try:
             import ezdxf
             import datetime
-            
-            # 生成带时间戳的文件名，避免文件锁定问题
-            timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-            dxf_dir = os.path.dirname(dxf_file)
-            base_name = os.path.basename(dxf_file)
-            name_without_ext = os.path.splitext(base_name)[0]
-            timestamped_name = f"{name_without_ext}_{timestamp}.dxf"
-            dxf_file = os.path.join(dxf_dir, timestamped_name)
             
             # 创建一个新的DXF文档
             doc = ezdxf.new("R2018")
@@ -592,7 +738,7 @@ class TubeLayoutGenerator:
                     }
                 )
                 current_y -= 250  # 恢复原来的行间距
-                current_y -= 200  # 额外增加100间距，仅在文字和第一行钢管之间增加
+                current_y -= 400  # 额外增加100间距，仅在文字和第一行钢管之间增加
                 
                 # 计算每个方案的余料长度，并按余料长度排序
                 # 余料长度 = 原材长度 - 总切割长度
@@ -609,8 +755,8 @@ class TubeLayoutGenerator:
                 def is_splice_free(plan):
                     # 检查方案是否不使用其他方案的余料
                     uses_splice = any('spliced_from' in tube for tube in plan['tubes'])
-                    # 检查方案是否不产生余料或余料≤400mm（不会被用于拼接）
-                    produces_splice = plan['remaining_length'] > 400
+                    # 检查方案是否不产生余料或余料≤600mm（不会被用于拼接）
+                    produces_splice = plan['remaining_length'] > 600
                     # 完全不需要拼接的方案：不使用其他方案的余料，也不产生可被拼接的余料
                     return not uses_splice and not produces_splice
                 
@@ -623,6 +769,11 @@ class TubeLayoutGenerator:
                     return (0,) if plan['remaining_length'] <= 400 else (1,)
                 
                 sorted_splice_free_plans = sorted(splice_free_plans, key=sort_splice_free)
+                
+                # 调整无拼接方管的分割顺序，从左到右依次变短
+                for plan in sorted_splice_free_plans:
+                    # 按方管长度降序排序，从左到右依次变短
+                    plan['tubes'].sort(key=lambda x: x['tube_length'], reverse=True)
                 
                 # 处理需要拼接的方案：按拼接顺序排列
                 # 创建一个字典来存储所有方案，方便查找
@@ -644,9 +795,11 @@ class TubeLayoutGenerator:
                             if (plan_with_leftover['plan_id'] != plan_with_splice['plan_id'] and
                                 plan_with_leftover['tube_width'] == plan_with_splice['tube_width'] and
                                 plan_with_leftover['remaining_length'] == splice_length):
-                                splice_relations[plan_with_leftover['plan_id']] = plan_with_splice['plan_id']
-                                plans_that_use_splice.add(plan_with_splice['plan_id'])
-                                break
+                                # 检查该方案是否已经被关联
+                                if plan_with_leftover['plan_id'] not in splice_relations:
+                                    splice_relations[plan_with_leftover['plan_id']] = plan_with_splice['plan_id']
+                                    plans_that_use_splice.add(plan_with_splice['plan_id'])
+                                    break
                 
                 # 检查并处理方案合并可能导致的拼接关系丢失
                 for plan_with_splice in plans_with_splice:
@@ -717,7 +870,7 @@ class TubeLayoutGenerator:
                 sorted_plans = reordered_plans
                 
                 # 绘制当前宽度组的切割方案
-                for plan in sorted_plans:
+                for i, plan in enumerate(sorted_plans):
                         
                     # 使用当前y坐标作为方管的垂直中心
                     y = current_y
@@ -752,6 +905,29 @@ class TubeLayoutGenerator:
                     )
                     dim.render()
                     
+                    # 只给第一根方管增加总长的线性标注
+                    if i == 0:
+                        # 线性标注的两个端点（方管的左右两端）
+                        p1 = (current_x, rect_top)  # 左端点（在方管上方）
+                        p2 = (current_x + 12000, rect_top)  # 右端点（在方管上方）
+                        # 标注的基准点位置（方管上方中间）
+                        base = (current_x + 12000 / 2, rect_top + 280)  # 标注文本的位置，在方管上方
+                        # 创建线性标注
+                        dim = msp.add_linear_dim(
+                            base=base,
+                            p1=p1,
+                            p2=p2,
+                            text="12000",
+                            dimstyle="Standard",
+                            dxfattribs={
+                                "layer": "DIMENSION",
+                                "color": 3,  # 绿色
+                                "lineweight": 25
+                            },
+                            angle=0  # 水平标注
+                        )
+                        dim.render()
+                    
                     for j, tube in enumerate(plan['tubes']):
                         length = tube['tube_length']
                         product_length = tube['product_length']
@@ -766,13 +942,13 @@ class TubeLayoutGenerator:
                         msp.add_line(
                             (current_x, rect_top),
                             (current_x + length, rect_top),
-                            dxfattribs={"layer": "TUBE", "lineweight": 50, "color": 7}
+                            dxfattribs={"layer": "TUBE", "lineweight": 35, "color": 7}
                         )
                         # 下边
                         msp.add_line(
                             (current_x, rect_bottom),
                             (current_x + length, rect_bottom),
-                            dxfattribs={"layer": "TUBE", "lineweight": 50, "color": 7}
+                            dxfattribs={"layer": "TUBE", "lineweight": 35, "color": 7}
                         )
                         
                         # 只绘制第一个方管段的左边
@@ -780,23 +956,19 @@ class TubeLayoutGenerator:
                             msp.add_line(
                                 (current_x, rect_top),
                                 (current_x, rect_bottom),
-                                dxfattribs={"layer": "TUBE", "lineweight": 50, "color": 7}
+                                dxfattribs={"layer": "TUBE", "lineweight": 35, "color": 7}
                             )
                         
                         # 绘制右边（作为下一个方管段的左边）
                         msp.add_line(
                             (current_x + length, rect_top),
                             (current_x + length, rect_bottom),
-                            dxfattribs={"layer": "TUBE", "lineweight": 50, "color": 7}
+                            dxfattribs={"layer": "TUBE", "lineweight": 35, "color": 7}
                         )
                         
                         # 添加方管段长度标注（使用线性标注）
-                        if 'spliced_from' in tube:
-                            # 拼接方管的特殊标注格式：实际长度(+拼接长度=此方管需求长度）
-                            dim_text = f"{length}(+{tube['spliced_from']}={tube['original_length']})"
-                        else:
-                            # 普通方管的标注格式
-                            dim_text = f"{length}"
+                        # 所有方管都只显示实际长度，不显示拼接信息
+                        dim_text = f"{length}"
                         
                         # 线性标注的两个端点（方管段的左右两端）
                         p1 = (current_x, rect_top)  # 左端点
@@ -852,25 +1024,25 @@ class TubeLayoutGenerator:
                         msp.add_line(
                             (current_x, rect_top),
                             (current_x + remaining_length, rect_top),
-                            dxfattribs={"layer": "TUBE", "lineweight": 50, "color": 7}
+                            dxfattribs={"layer": "TUBE", "lineweight": 35, "color": 7}
                         )
                         # 下边
                         msp.add_line(
                             (current_x, rect_bottom),
                             (current_x + remaining_length, rect_bottom),
-                            dxfattribs={"layer": "TUBE", "lineweight": 50, "color": 7}
+                            dxfattribs={"layer": "TUBE", "lineweight": 35, "color": 7}
                         )
                         # 左边
                         msp.add_line(
                             (current_x, rect_top),
                             (current_x, rect_bottom),
-                            dxfattribs={"layer": "TUBE", "lineweight": 50, "color": 7}
+                            dxfattribs={"layer": "TUBE", "lineweight": 35, "color": 7}
                         )
                         # 右边
                         msp.add_line(
                             (current_x + remaining_length, rect_top),
                             (current_x + remaining_length, rect_bottom),
-                            dxfattribs={"layer": "TUBE", "lineweight": 50, "color": 7}
+                            dxfattribs={"layer": "TUBE", "lineweight": 35, "color": 7}
                         )
                         
                         # 显示剩余长度信息（使用线性标注）
@@ -880,8 +1052,30 @@ class TubeLayoutGenerator:
                         to_plan = splice_info.get('to_plan')
                         is_actually_spliced = to_plan is not None and to_plan > 0
                         
+                        # 初始化 spliced_tube 变量
+                        spliced_tube = None
                         if is_actually_spliced:
-                            remaining_text = f"{remaining_length}"
+                            # 查找下一个方案中使用此余料的方管
+                            next_plan = None
+                            for p in cutting_plans:
+                                if p['plan_id'] == to_plan:
+                                    next_plan = p
+                                    break
+                            
+                            if next_plan:
+                                # 找到第一个拼接的方管
+                                for tube in next_plan['tubes']:
+                                    if 'spliced_from' in tube:
+                                        spliced_tube = tube
+                                        break
+                                
+                                if spliced_tube:
+                                    # 显示为：余料(+剩余长度=需求方管长度)
+                                    remaining_text = f"{remaining_length}(+{spliced_tube['tube_length']}={spliced_tube['original_length']})"
+                                else:
+                                    remaining_text = f"{remaining_length}"
+                            else:
+                                remaining_text = f"{remaining_length}"
                         else:
                             remaining_text = f"余{remaining_length}"
                         
@@ -889,7 +1083,7 @@ class TubeLayoutGenerator:
                         p1 = (current_x, rect_top)  # 左端点
                         p2 = (current_x + remaining_length, rect_top)  # 右端点
                         # 标注的基准点位置（余料段上方中间）
-                        base = (current_x + remaining_length / 2, y + rect_height / 2 + 50)  # 标注文本的位置
+                        base = (current_x + remaining_length / 2, y + rect_height / 2 + 100)  # 标注文本的位置，加高50
                         # 创建线性标注
                         dim = msp.add_linear_dim(
                             base=base,
@@ -905,6 +1099,26 @@ class TubeLayoutGenerator:
                             angle=0  # 水平标注
                         )
                         dim.render()
+                        
+                        # 在余料内部添加产品信息标注（格式：BRB-屈服力-产品长度）
+                        if is_actually_spliced and spliced_tube:
+                            # 创建产品信息标注文本
+                            tube_info = f"BRB-{spliced_tube['yield_force']}-{spliced_tube['product_length']}"
+                            # 设置文字居中对齐，确保文字位于余料水平和垂直中心
+                            text_height = 120
+                            # 计算文字宽度，估算每个字符的宽度为高度的0.5倍
+                            text_width = len(tube_info) * text_height * 0.5
+                            # 计算文字的插入点（左下角），使文字居中
+                            insert_x = current_x + remaining_length / 2 - text_width / 2
+                            insert_y = y - text_height / 2
+                            msp.add_text(
+                                tube_info,
+                                dxfattribs={
+                                    "layer": "TEXT",
+                                    "height": text_height,
+                                    "insert": (insert_x, insert_y)
+                                }
+                            )
                     
                     # 添加原材编号（显示该切割方案的实际数量）
                     raw_info = f"{plan['raw_materials']}根"

@@ -1,7 +1,7 @@
 {
   "name": "yishexu-designtools-web",
-  "version": "1.0.0",
-  "description": "CAD文件转换和设计工具 - 网页版",
+  "version": "3.1.0",
+  "description": "羿射旭阻尼器设计工具集",
   "type": "module",
   "scripts": {
     "dev": "vite",

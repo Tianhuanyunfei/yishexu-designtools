@@ -86,6 +86,155 @@ const BrbDesigner: React.FC = () => {
       };
     }
   };
+
+  // 生成方管排布图功能
+  const handleGenerateTubeLayout = async () => {
+    if (!projectName.trim()) {
+      showToast('请先输入项目名称', 'error');
+      return;
+    }
+    
+    const total = calculateTotalQuantity();
+    if (total === 0) {
+      showToast('请至少输入一个有效的数量', 'error');
+      return;
+    }
+    
+    // 验证参数表中的所有数值参数是否有效
+    const invalidTables = parameterTables.filter(table => 
+      isNaN(parseInt(table.designForce)) || 
+      isNaN(parseInt(table.width)) || 
+      isNaN(parseInt(table.height)) || 
+      isNaN(parseInt(table.thickness)) || 
+      isNaN(parseInt(table.tubeWidth)) || 
+      isNaN(parseInt(table.tubeThickness)) || 
+      isNaN(parseInt(table.weld))
+    );
+    
+    if (invalidTables.length > 0) {
+      showToast('请检查所有参数是否为有效的数字', 'error');
+      return;
+    }
+    
+    try {
+      // 设置加载状态
+      setIsGeneratingTubeLayout(true);
+      showToast('正在生成方管排布图，请稍候...', 'info');
+      
+      // 准备请求数据
+      const requestData = {
+        projectName,
+        parameterTables,
+        totalQuantity: total
+      };
+      
+      console.log('准备发送的方管排布图请求数据:', requestData);
+      
+      // 调用后端API生成方管排布图
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => {
+        console.error('API调用超时');
+        controller.abort();
+      }, 30000); // 30秒超时
+      
+      try {
+        const response = await fetch('/api/brb/tube-layout', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(requestData),
+          signal: controller.signal // 添加超时信号
+        });
+        
+        clearTimeout(timeoutId); // 清除超时定时器
+        
+        if (!response.ok) {
+          console.error('API响应错误，准备获取错误详情...');
+          let errorData;
+          try {
+            errorData = await response.json();
+            console.error('API响应错误详情:', errorData);
+          } catch (parseError) {
+            console.error('解析错误响应失败:', parseError);
+            errorData = { message: '服务器返回错误响应' };
+          }
+          throw new Error(errorData.message || '生成方管排布图失败');
+        }
+        
+        // 处理响应
+        const contentType = response.headers.get('content-type');
+        
+        if (contentType && contentType.includes('application/json')) {
+          // 如果是JSON响应，表示生成了多个文件或返回了文件路径列表
+          const result = await response.json();
+          console.log('生成方管排布图结果:', result);
+          
+          // 显示生成的文件路径或文件名
+          if (result.result && result.result.length > 0) {
+            console.log('生成的文件:', result.result);
+            
+            // 将生成的文件添加到下载列表
+            const newFiles: GeneratedFile[] = result.result.map((fileName: string, index: number) => ({
+              id: Date.now().toString() + Math.random().toString(36).substring(2, 9) + index,
+              name: fileName,
+              path: `tube_layout_${Date.now()}_${index}.dxf`, // 生成一个虚拟路径用于下载标识
+              type: 'drawing',
+              tableIndex: index // 记录该文件对应的参数表索引
+            }));
+            
+            setGeneratedFiles(prev => [...prev, ...newFiles]);
+            
+            const fileNames = newFiles.map(file => `• ${file.name}`).join('\n');
+            showToast(`方管排布图生成成功！\n\n生成的文件:\n${fileNames}`, 'success');
+          } else {
+            showToast('方管排布图生成成功！', 'success');
+          }
+        } else {
+          // 如果不是JSON响应，表示直接返回了文件流
+          console.log('直接返回了文件流');
+          
+          // 获取文件名
+          const contentDisposition = response.headers.get('content-disposition');
+          let fileName = `${projectName} 方管排布图.dxf`;
+          if (contentDisposition) {
+            const matches = /filename="([^"]+)"/.exec(contentDisposition);
+            if (matches && matches[1]) {
+              fileName = matches[1];
+            }
+          }
+          
+          // 将生成的文件添加到下载列表
+          const newFile: GeneratedFile = {
+            id: Date.now().toString() + Math.random().toString(36).substring(2, 9),
+            name: fileName,
+            path: `tube_layout_${Date.now()}.dxf`, // 生成一个虚拟路径用于下载标识
+            type: 'drawing',
+            tableIndex: 0 // 单个文件时，tableIndex默认为0
+          };
+          
+          setGeneratedFiles(prev => [...prev, newFile]);
+          
+          showToast(`方管排布图生成成功！文件: ${newFile.name}`, 'success');
+        }
+      } catch (error) {
+        clearTimeout(timeoutId); // 清除超时定时器
+        if ((error as any).name === 'AbortError') {
+          throw new Error('API调用超时，请检查网络连接或稍后重试');
+        }
+        if (error instanceof Error && error.message.includes('Failed to fetch')) {
+          throw new Error('无法连接到服务器，请检查网络连接和服务器状态');
+        }
+        throw error; // 重新抛出其他错误
+      }
+    } catch (error) {
+      console.error('生成方管排布图错误:', error);
+      showToast(error instanceof Error ? error.message : '生成方管排布图失败，请检查网络连接或服务器状态', 'error');
+    } finally {
+      // 无论成功或失败，都重置加载状态
+      setIsGeneratingTubeLayout(false);
+    }
+  };
   
   const initialState = loadInitialState();
   
@@ -114,6 +263,7 @@ const BrbDesigner: React.FC = () => {
   // 添加加载状态
   const [isGeneratingDrawings, setIsGeneratingDrawings] = useState(false);
   const [isGeneratingMaterials, setIsGeneratingMaterials] = useState(false);
+  const [isGeneratingTubeLayout, setIsGeneratingTubeLayout] = useState(false);
 
 
 
@@ -1387,6 +1537,14 @@ const BrbDesigner: React.FC = () => {
         >
           <Box className="h-4 w-4" />
           <span>{isGeneratingMaterials ? '生成中...' : '生成材料单'}</span>
+        </button>
+        <button 
+          className="btn-primary flex items-center space-x-2 disabled:opacity-70 disabled:cursor-not-allowed"
+          onClick={handleGenerateTubeLayout}
+          disabled={isGeneratingTubeLayout}
+        >
+          <Box className="h-4 w-4" />
+          <span>{isGeneratingTubeLayout ? '生成中...' : '生成方管排布图'}</span>
         </button>
       </div>
       

@@ -1,12 +1,12 @@
 <#
 Start前后端服务器的PowerShell脚本
-Author: CAD-change
-Date: 2026-01-09
+Author: yishexu-designtools
+Date: 2026-01-20
 #>
 
 Clear-Host
 Write-Host "========================================"
-Write-Host "    CAD-change Server Startup Script"
+Write-Host "    yishexu-designtools Server Startup Script"
 Write-Host "========================================"
 Write-Host ""
 Write-Host "Checking environment..."
@@ -37,7 +37,7 @@ Write-Host "    Starting Backend Server (Port: 8000)"
 Write-Host "========================================"
 
 # Start backend server in new window
-$backendCmd = "cd /d `"$PSScriptRoot`" && python backend/app.py"
+$backendCmd = "cd /d `"$PSScriptRoot\backend`" && python run.py"
 Start-Process cmd.exe -ArgumentList "/k", $backendCmd
 
 # Wait for backend to start

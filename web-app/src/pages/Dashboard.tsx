@@ -30,6 +30,13 @@ const Dashboard: React.FC = () => {
   // 版本更新记录
   const versionUpdates: VersionUpdate[] = [
     {
+      version: "3.1.0",
+      date: "2026-01-21",
+      changes: [
+        "增加BRB方管自动排布功能"
+      ]
+    },
+    {
       version: "3.0.3",
       date: "2026-01-19",
       changes: [
