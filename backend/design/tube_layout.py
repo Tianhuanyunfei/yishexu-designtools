@@ -735,7 +735,7 @@ class TubeLayoutGenerator:
                     p1 = (current_x + 10, rect_bottom)  # 底部点
                     p2 = (current_x + 10, rect_top)  # 顶部点
                     # 标注的基准点位置
-                    base = (current_x + 10 + 50, y)  # 标注文本的位置
+                    base = (current_x - 10 - 100, y)  # 标注文本的位置
                     # 创建线性标注
                     dim = msp.add_linear_dim(
                         base=base,
@@ -802,7 +802,7 @@ class TubeLayoutGenerator:
                         p1 = (current_x, rect_top)  # 左端点
                         p2 = (current_x + length, rect_top)  # 右端点
                         # 标注的基准点位置（方管段上方中间）
-                        base = (current_x + length / 2, y + rect_height / 2 + 50)  # 标注文本的位置
+                        base = (current_x + length / 2, y + rect_height / 2 + 100)  # 标注文本的位置，加高50
                         # 创建线性标注
                         dim = msp.add_linear_dim(
                             base=base,
