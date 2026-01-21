@@ -732,8 +732,8 @@ class TubeLayoutGenerator:
                     rect_top = y + rect_height / 2
                     rect_bottom = y - rect_height / 2
                     # 标注的两个端点（方管的顶部和底部）
-                    p1 = (current_x + 10, rect_top)  # 顶部点
-                    p2 = (current_x + 10, rect_bottom)  # 底部点
+                    p1 = (current_x + 10, rect_bottom)  # 底部点
+                    p2 = (current_x + 10, rect_top)  # 顶部点
                     # 标注的基准点位置
                     base = (current_x + 10 + 50, y)  # 标注文本的位置
                     # 创建线性标注
