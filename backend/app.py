@@ -2,19 +2,17 @@ import os
 import sys
 from flask import Flask, request, jsonify, send_file
 from flask_cors import CORS
+from flask_jwt_extended import JWTManager
 from werkzeug.utils import secure_filename
 import tempfile
 import csv
 import json
 from dotenv import load_dotenv
 
-# 加载环境变量
 load_dotenv()
 
-# 添加design目录到Python路径
 sys.path.append(os.path.join(os.path.dirname(__file__), 'design'))
 
-# 导入后端功能模块
 try:
     from brb_drawing import brb_drawing
     from vfd_drawing import vfd_drawing
@@ -30,24 +28,34 @@ except Exception as e:
 
 app = Flask(__name__)
 
-# 确保Flask应用正确处理UTF-8编码
 app.config['JSON_AS_ASCII'] = False
 
-# 配置CORS
+# 从配置模块加载所有配置
+from config.config import config
+app.config.from_object(config['default'])
+
 CORS(app)
 
-# 配置上传文件夹
+from app.database import db
+db.init_app(app)
+
+jwt = JWTManager(app)
+
+from app.auth import routes
+app.register_blueprint(routes.auth_bp)
+
+with app.app_context():
+    db.create_all()
+
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 UPLOAD_FOLDER = os.path.join(PROJECT_ROOT, 'uploads')
 ALLOWED_EXTENSIONS = {'dxf', 'csv'}
 
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 
-# 确保上传文件夹存在
 if not os.path.exists(UPLOAD_FOLDER):
     os.makedirs(UPLOAD_FOLDER)
 
-# 辅助函数：检查文件类型
 def allowed_file(filename, allowed_extensions=None):
     if allowed_extensions is None:
         allowed_extensions = ALLOWED_EXTENSIONS
@@ -57,6 +65,24 @@ def allowed_file(filename, allowed_extensions=None):
 @app.route('/api/health', methods=['GET'])
 def health_check():
     return jsonify({'status': 'ok', 'message': 'yishexu-designtools API is running'})
+
+# 调试中间件
+@app.before_request
+def debug_request():
+    print(f"收到请求: {request.method} {request.path}")
+    print(f"  content-type: {request.content_type}")
+    print(f"  data: {request.get_data(as_text=True)[:100] if request.data else 'None'}")
+
+# 404错误处理器
+@app.errorhandler(404)
+def not_found(error):
+    print(f"404错误: {request.method} {request.path}")
+    return jsonify({'status': 'error', 'message': '请求的资源不存在'}), 404
+
+@app.errorhandler(405)
+def method_not_allowed(error):
+    print(f"405错误: {request.method} {request.path}")
+    return jsonify({'status': 'error', 'message': '不允许的请求方法'}), 405
 
 # BRB图纸下载API
 @app.route('/api/brb/drawing-download', methods=['POST'])
@@ -704,4 +730,4 @@ def delete_file():
         return jsonify({'status': 'error', 'message': f'文件删除过程出错: {str(e)}'}), 500
 
 if __name__ == '__main__':
-    app.run(debug=True, port=8000, host='0.0.0.0')
+    app.run(debug=False, port=8000, host='0.0.0.0')

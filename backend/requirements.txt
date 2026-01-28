@@ -1,5 +1,7 @@
 openpyxl==3.1.5
 flask==3.0.3
 flask-cors==5.0.0
+flask-jwt-extended==4.6.0
+flask-sqlalchemy==3.1.1
 python-dotenv==1.0.1
 werkzeug==3.0.2

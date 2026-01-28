@@ -15,10 +15,11 @@ from config.config import config
 
 # 导入路由
 from app.routes.routes import register_routes
+from app.auth.routes import auth_bp
 
 # 创建Flask应用
 def create_app(config_name=None):
-    # 如果没有指定配置名称，使用环境变量中的配置或默认配置
+    # 如果没有指定指定配置名称，使用环境变量中的配置或默认配置
     if config_name is None:
         config_name = os.environ.get('FLASK_CONFIG', 'default')
     
@@ -34,7 +35,18 @@ def create_app(config_name=None):
     # 配置CORS
     CORS(app)
     
+    # 初始化JWT
+    from flask_jwt_extended import JWTManager
+    jwt = JWTManager(app)
+    
     # 注册路由
     register_routes(app)
+    
+    # 注册auth blueprint
+    from app.database import db
+    db.init_app(app)
+    with app.app_context():
+        db.create_all()
+    app.register_blueprint(auth_bp)
     
     return app
