@@ -1,10 +1,18 @@
 from flask import Blueprint, request, jsonify
 from flask_jwt_extended import jwt_required, get_jwt_identity
-from ..database import User, db
+from ..database import User, db, PERMISSIONS
 from .utils import generate_password_hash, check_password_hash, create_tokens
 import re
 
 auth_bp = Blueprint('auth', __name__, url_prefix='/api/auth')
+
+@auth_bp.route('/permissions', methods=['GET'])
+def get_all_permissions():
+    """获取所有可用权限列表"""
+    return jsonify({
+        'status': 'success',
+        'data': PERMISSIONS
+    }), 200
 
 @auth_bp.route('/register', methods=['POST'])
 def register():
@@ -97,6 +105,8 @@ def login():
             'data': {
                 'user_id': user.id,
                 'username': user.username,
+                'role': user.role,
+                'permissions': user.get_permissions_list(),
                 'token': access_token
             }
         }), 200
@@ -124,6 +134,8 @@ def get_user_info():
             'data': {
                 'user_id': user.id,
                 'username': user.username,
+                'role': user.role,
+                'permissions': user.get_permissions_list(),
                 'created_at': user.created_at.isoformat()
             }
         }), 200
@@ -150,3 +162,45 @@ def logout():
         import traceback
         traceback.print_exc()
         return jsonify({'status': 'error', 'message': f'退出登录过程出错: {str(e)}'}), 500
+
+@auth_bp.route('/user/<int:user_id>/permissions', methods=['PUT'])
+@jwt_required()
+def update_user_permissions(user_id):
+    """更新用户权限（管理员专用）"""
+    try:
+        current_user_id = get_jwt_identity()
+        current_user = User.query.filter_by(id=current_user_id).first()
+        
+        if not current_user or current_user.role != 'admin':
+            return jsonify({'status': 'error', 'message': '只有管理员可以修改权限'}), 403
+        
+        data = request.get_json()
+        if not data:
+            return jsonify({'status': 'error', 'message': '无有效数据'}), 400
+        
+        user = User.query.filter_by(id=user_id).first()
+        if not user:
+            return jsonify({'status': 'error', 'message': '用户不存在'}), 404
+        
+        role = data.get('role', 'user')
+        permissions = data.get('permissions', [])
+        
+        user.role = role
+        user.set_permissions(permissions)
+        db.session.commit()
+        
+        return jsonify({
+            'status': 'success',
+            'message': '权限更新成功',
+            'data': {
+                'user_id': user.id,
+                'username': user.username,
+                'role': user.role,
+                'permissions': user.get_permissions_list()
+            }
+        }), 200
+        
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({'status': 'error', 'message': f'更新权限失败: {str(e)}'}), 500

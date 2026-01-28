@@ -1,23 +1,20 @@
-import { Navigate, Outlet, useLocation } from 'react-router-dom';
+import React, { useLocation } from 'react';
+import { Navigate } from 'react-router-dom';
 
-interface ProtectedRouteProps {
-  isAuthenticated: boolean;
+interface PermissionWrapperProps {
+  children: React.ReactNode;
   requiredPermission?: string;
   userRole?: string;
   userPermissions?: string[];
 }
 
-export default function ProtectedRoute({ 
-  isAuthenticated, 
+export default function PermissionWrapper({
+  children,
   requiredPermission,
   userRole,
   userPermissions = []
-}: ProtectedRouteProps) {
+}: PermissionWrapperProps) {
   const location = useLocation();
-  
-  if (!isAuthenticated) {
-    return <Navigate to="/login" replace />;
-  }
 
   if (requiredPermission) {
     const isAdmin = userRole === 'admin';
@@ -39,5 +36,5 @@ export default function ProtectedRoute({
     }
   }
 
-  return <Outlet />;
+  return <>{children}</>;
 }

@@ -33,11 +33,15 @@ export default function Login({ onLogin }: LoginProps) {
         localStorage.setItem('token', data.data.token);
         localStorage.setItem('user', JSON.stringify({
           userId: data.data.user_id,
-          username: data.data.username
+          username: data.data.username,
+          role: data.data.role,
+          permissions: data.data.permissions || []
         }));
         onLogin({
           userId: data.data.user_id,
-          username: data.data.username
+          username: data.data.username,
+          role: data.data.role,
+          permissions: data.data.permissions || []
         });
         navigate('/');
       } else {

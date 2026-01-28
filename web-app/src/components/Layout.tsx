@@ -4,8 +4,14 @@ import Header from './Header';
 import Sidebar from './Sidebar';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 
+interface UserInfo {
+  username: string;
+  role?: string;
+  permissions?: string[];
+}
+
 interface LayoutProps {
-  user: { username: string } | null;
+  user: UserInfo | null;
   onLogout: () => void;
 }
 
@@ -16,11 +22,14 @@ const Layout: React.FC<LayoutProps> = ({ user, onLogout }) => {
     setSidebarVisible(!sidebarVisible);
   };
 
+  const userPermissions = user?.permissions || [];
+  const userRole = user?.role || 'user';
+
   return (
     <div className="min-h-screen bg-gray-50">
       <Header toggleSidebar={toggleSidebar} sidebarVisible={sidebarVisible} user={user} onLogout={onLogout} />
       <div className="flex">
-        <Sidebar visible={sidebarVisible} toggleSidebar={toggleSidebar} />
+        <Sidebar visible={sidebarVisible} toggleSidebar={toggleSidebar} userRole={userRole} userPermissions={userPermissions} />
         <button
           onClick={toggleSidebar}
           className={`fixed top-20 left-0 z-40 p-2 bg-white rounded-r-lg shadow-brb-lg hover:bg-gray-100 transition-all duration-300 ease-in-out transform ${sidebarVisible ? 'translate-x-64' : 'translate-x-0'} border border-l-0 border-gray-200`}

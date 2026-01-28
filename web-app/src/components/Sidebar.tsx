@@ -20,15 +20,15 @@ import {
 interface SidebarProps {
   visible: boolean;
   toggleSidebar: () => void;
+  userRole?: string;
+  userPermissions?: string[];
 }
 
-const Sidebar: React.FC<SidebarProps> = ({ visible, toggleSidebar }) => {
+const Sidebar: React.FC<SidebarProps> = ({ visible, toggleSidebar, userRole = 'user', userPermissions = [] }) => {
   const location = useLocation();
   
-  // 为每个分类添加折叠状态管理，默认都展开
   const [collapsedCategories, setCollapsedCategories] = React.useState<{ [key: string]: boolean }>({});
   
-  // 切换分类的折叠状态
   const toggleCategory = (categoryIndex: string) => {
     setCollapsedCategories(prev => ({
       ...prev,
@@ -44,7 +44,8 @@ const Sidebar: React.FC<SidebarProps> = ({ visible, toggleSidebar }) => {
           name: '主页',
           path: '/',
           icon: Home,
-          color: 'text-blue-600'
+          color: 'text-blue-600',
+          permission: null
         }
       ]
     },
@@ -55,7 +56,8 @@ const Sidebar: React.FC<SidebarProps> = ({ visible, toggleSidebar }) => {
           name: 'BRB图纸绘制',
           path: '/brb-drawing',
           icon: Box,
-          color: 'text-orange-600'
+          color: 'text-orange-600',
+          permission: 'brb_drawing'
         }
       ]
     },
@@ -66,13 +68,15 @@ const Sidebar: React.FC<SidebarProps> = ({ visible, toggleSidebar }) => {
             name: 'VFD频率计算',
             path: '/vfd-period-frequency',
             icon: Calculator,
-            color: 'text-blue-600'
+            color: 'text-blue-600',
+            permission: 'vfd_period'
           },
           {
             name: 'BRB结构核算',
             path: '/brb-stability',
             icon: Shield,
-            color: 'text-green-600'
+            color: 'text-green-600',
+            permission: 'brb_stability'
           }
         ]
       },
@@ -83,13 +87,15 @@ const Sidebar: React.FC<SidebarProps> = ({ visible, toggleSidebar }) => {
           name: 'DXF转CSV',
           path: '/dxf-to-csv',
           icon: FileText,
-          color: 'text-purple-600'
+          color: 'text-purple-600',
+          permission: 'dxf_csv'
         },
         {
           name: 'CSV转DXF',
           path: '/csv-to-dxf',
           icon: FileSpreadsheet,
-          color: 'text-indigo-600'
+          color: 'text-indigo-600',
+          permission: 'csv_dxf'
         }
       ]
     },
@@ -100,7 +106,8 @@ const Sidebar: React.FC<SidebarProps> = ({ visible, toggleSidebar }) => {
           name: '编辑CSV文件',
           path: '/csv-editor',
           icon: Table,
-          color: 'text-gray-600'
+          color: 'text-gray-600',
+          permission: 'csv_editor'
         }
       ]
     },
@@ -111,13 +118,15 @@ const Sidebar: React.FC<SidebarProps> = ({ visible, toggleSidebar }) => {
           name: 'BRB产品设计',
           path: '/brb-designer',
           icon: Box,
-          color: 'text-orange-600'
+          color: 'text-orange-600',
+          permission: 'brb_designer'
         },
         {
           name: '粘滞产品设计',
           path: '/vfd-designer',
           icon: Zap,
-          color: 'text-green-600'
+          color: 'text-green-600',
+          permission: 'vfd_designer'
         }
       ]
     },
@@ -128,7 +137,8 @@ const Sidebar: React.FC<SidebarProps> = ({ visible, toggleSidebar }) => {
           name: '系统设置',
           path: '/settings',
           icon: Settings,
-          color: 'text-purple-600'
+          color: 'text-purple-600',
+          permission: 'settings'
         }
       ]
     },
@@ -139,11 +149,27 @@ const Sidebar: React.FC<SidebarProps> = ({ visible, toggleSidebar }) => {
           name: '帮助文档',
           path: '/help',
           icon: HelpCircle,
-          color: 'text-gray-600'
+          color: 'text-gray-600',
+          permission: null
         }
       ]
     }
   ];
+
+  const hasPermission = (permission: string | null): boolean => {
+    if (!permission) return true;
+    if (userRole === 'admin') return true;
+    return userPermissions.includes(permission);
+  };
+
+  const filterMenuItems = () => {
+    return menuItems.map(category => ({
+      ...category,
+      items: category.items.filter(item => hasPermission(item.permission))
+    })).filter(category => category.items.length > 0);
+  };
+
+  const filteredMenuItems = filterMenuItems();
 
   return (
     <aside 
@@ -151,7 +177,7 @@ const Sidebar: React.FC<SidebarProps> = ({ visible, toggleSidebar }) => {
     >
       <nav className="p-4">
         <div className="space-y-4">
-          {menuItems.map((menuCategory, categoryIndex) => {
+          {filteredMenuItems.map((menuCategory, categoryIndex) => {
             return (
               <div key={categoryIndex}>
                 {/* 分类标题（可点击，带折叠/展开图标） */}
