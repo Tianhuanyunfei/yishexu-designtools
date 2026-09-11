@@ -31,22 +31,24 @@ interface BrbStabilityParams {
 interface StabilityResult {
   id: string;
   slendernessRatio: number; // 长细比
-  coreArea: number; // 芯板截面积(mm²)
-  coreIy: number; // 芯板Iy(mm⁴)
-  coreIz: number; // 芯板Iz(mm⁴)
-  tubeArea: number; // 套筒截面积(mm²)
-  tubeIy: number; // 套筒Iy(mm⁴)
-  tubeIz: number; // 套筒Iz(mm⁴)
-  fcr1: number; // Fcr1(kN)
-  fcr2: number; // Fcr2(kN)
-  fcr: number; // Fcr(kN)
+  coreArea: number; // 芯板截面积 (mm²)
+  coreIy: number; // 芯板 Iy(mm⁴)
+  coreIz: number; // 芯板 Iz(mm⁴)
+  tubeArea: number; // 套筒截面积 (mm²)
+  tubeIy: number; // 套筒 Iy(mm⁴)
+  tubeIz: number; // 套筒 Iz(mm⁴)
+  concreteArea: number; // 混凝土截面积 (mm²)
+  fcr1: number; // Fcr1(kN) - 芯板欧拉临界力
+  fcr2: number; // Fcr2(kN) - 套筒屈服力
+  fcr3: number; // Fcr3(kN) - 混凝土作用力
+  fcr: number; // Fcr(kN) - 总屈曲强度
   fcrFyRatio: number; // Fcr/Fy
-  bucklingStrength: number; // 屈曲强度(kN)
+  bucklingStrength: number; // 屈曲强度 (kN)
   isStable: boolean; // 是否稳定
   safetyMargin: number; // 安全余量
-  theoreticalFy: number; // 理论屈服力(kN)
-  deviation: number; // 偏差(kN)
-  deviationPercentage: number; // 偏差百分比(%)
+  theoreticalFy: number; // 理论屈服力 (kN)
+  deviation: number; // 偏差 (kN)
+  deviationPercentage: number; // 偏差百分比 (%)
 }
 
 const BrbStabilityChecker: React.FC = () => {
@@ -81,10 +83,10 @@ const BrbStabilityChecker: React.FC = () => {
               let endSection = '';
               
               // 根据model值确定耗能面和端面
-              if (row.model === '王工') {
+              if (row.model === '王工' || row.model === '王（工）') {
                 energySection = '工';
                 endSection = '王';
-              } else if (row.model === '十一') {
+              } else if (row.model === '十一' || row.model === '十') {
                 energySection = '丨';
                 endSection = '十';
               }
@@ -203,9 +205,18 @@ const BrbStabilityChecker: React.FC = () => {
       const paramSet = { ...newList[0] };
       const updatedRows = paramSet.rows.map(row => {
         if (row.rowId === rowId) {
-          // 如果更新的是材料型号，且值为Q235，则自动设置屈服强度为294
-          if (field === 'materialModel' && value === 'Q235') {
-            return { ...row, [field]: value, yieldStrength: '294' };
+          // 如果更新的是材料型号，自动设置对应的屈服强度
+          if (field === 'materialModel') {
+            let yieldStrengthValue = row.yieldStrength;
+            if (value === 'Q235') {
+              yieldStrengthValue = '294';
+            } else if (value === 'LY225') {
+              yieldStrengthValue = '225';
+            } else if (value === 'LY160') {
+              yieldStrengthValue = '160';
+            }
+            // 如果是"其他"，保持当前输入值不变
+            return { ...row, [field]: value, yieldStrength: yieldStrengthValue };
           }
           return { ...row, [field]: value };
         }
@@ -438,14 +449,23 @@ const BrbStabilityChecker: React.FC = () => {
       const k = 1.0; // 约束系数
       const PI = 3.14; // 取π为3.14
 
-      // 计算Fcr1 - 欧拉临界力(kN) - 使用欧拉公式
+      // 计算 Fcr1 - 欧拉临界力 (kN) - 使用欧拉公式
       const fcr1 = (k * Math.pow(PI, 2) * E * coreIz) / (Math.pow(L, 2)) / 1000;
 
-      // 计算Fcr2 - 套筒的欧拉临界力(kN) - 使用欧拉公式
-      const fcr2 = (k * Math.pow(PI, 2) * E * tubeIz) / (Math.pow(L, 2)) / 1000;
+      // 计算 Fcr2 - 套筒屈服力 (kN) = 套筒截面积 (mm²) * 屈服强度 (MPa) / 1000
+      const fcr2 = (tubeArea * f_y) / 1000;
 
-      // 计算Fcr - 总屈曲强度(kN)
-      const fcr = fcr1 + fcr2;
+      // 计算混凝土截面积 (mm²) = 套筒内腔面积 - 芯板截面积
+      const concreteArea = ((B - 2 * T) * (H - 2 * T)) - coreArea;
+
+      // 获取混凝土抗压强度 (MPa)
+      const f_c = parseFloat(paramsList[0].concreteStrength || '30'); // 默认 C30 混凝土
+
+      // 计算 Fcr3 - 混凝土作用力 (kN) = 混凝土截面积 (mm²) * 混凝土抗压强度 (MPa) / 1000
+      const fcr3 = (concreteArea * f_c) / 1000;
+
+      // 计算 Fcr - 总屈曲强度 (kN)
+      const fcr = fcr1 + fcr2 + fcr3;
 
       // 计算Fcr/Fy比值，使用理论屈服力
       const fcrFyRatio = fcr / theoreticalFy;
@@ -475,8 +495,10 @@ const BrbStabilityChecker: React.FC = () => {
         tubeArea: parseFloat(tubeArea.toFixed(0)),
         tubeIy: parseFloat(tubeIy.toFixed(0)),
         tubeIz: parseFloat(tubeIz.toFixed(0)),
+        concreteArea: parseFloat(concreteArea.toFixed(0)),
         fcr1: parseFloat(fcr1.toFixed(0)),
         fcr2: parseFloat(fcr2.toFixed(0)),
+        fcr3: parseFloat(fcr3.toFixed(0)),
         fcr: parseFloat(fcr.toFixed(0)),
         fcrFyRatio: parseFloat(fcrFyRatio.toFixed(2)),
         bucklingStrength: parseFloat(bucklingStrength.toFixed(2)),
@@ -803,13 +825,16 @@ const BrbStabilityChecker: React.FC = () => {
                       
                       {/* 材料参数 */}
                       <td className="px-2 py-1 border-b border-r border-gray-300">
-                        <input
-                          type="text"
+                        <select
                           value={row.materialModel}
                           onChange={(e) => updateParam(row.rowId, 'materialModel', e.target.value)}
-                          className="w-full px-2 py-1 border-0 text-xs focus:outline-none text-center"
-                          placeholder=""
-                        />
+                          className="w-full px-2 py-1 border-0 text-xs focus:outline-none text-center bg-white"
+                        >
+                          <option value="Q235">Q235</option>
+                          <option value="LY225">LY225</option>
+                          <option value="LY160">LY160</option>
+                          <option value="其他">其他</option>
+                        </select>
                       </td>
                       <td className="px-2 py-1 border-b border-r border-gray-300">
                         <input
@@ -892,11 +917,14 @@ const BrbStabilityChecker: React.FC = () => {
                         {/* 套筒截面计算 */}
                         <th className="px-2 py-1 border-b border-r border-gray-300 bg-gray-100 font-medium text-xs text-gray-800" colSpan={3}>套筒截面计算</th>
                         
+                        {/* 混凝土截面计算 */}
+                        <th className="px-2 py-1 border-b border-r border-gray-300 bg-gray-100 font-medium text-xs text-gray-800" colSpan={1}>混凝土截面计算</th>
+                        
                         {/* 芯材屈服力核算 */}
                         <th className="px-2 py-1 border-b border-r border-gray-300 bg-gray-100 font-medium text-xs text-gray-800" colSpan={2}>芯材屈服力核算</th>
                         
                         {/* 稳定性核算 */}
-                        <th className="px-2 py-1 border-b border-r border-gray-300 bg-gray-100 font-medium text-xs text-gray-800" colSpan={5}>稳定性核算</th>
+                        <th className="px-2 py-1 border-b border-r border-gray-300 bg-gray-100 font-medium text-xs text-gray-800" colSpan={6}>稳定性核算</th>
                       </tr>
                       <tr>
                         {/* 芯材截面计算 */}
@@ -909,6 +937,9 @@ const BrbStabilityChecker: React.FC = () => {
                         <th className="px-2 py-1 border-b border-r border-gray-300 bg-gray-100 font-medium text-xs text-gray-800">Iy</th>
                         <th className="px-2 py-1 border-b border-r border-gray-300 bg-gray-100 font-medium text-xs text-gray-800">Iz</th>
                         
+                        {/* 混凝土截面计算 */}
+                        <th className="px-2 py-1 border-b border-r border-gray-300 bg-gray-100 font-medium text-xs text-gray-800">截面积</th>
+                        
                         {/* 芯材屈服力核算 */}
                         <th className="px-2 py-1 border-b border-r border-gray-300 bg-gray-100 font-medium text-xs text-gray-800">Fy(理论)</th>
                         <th className="px-2 py-1 border-b border-r border-gray-300 bg-gray-100 font-medium text-xs text-gray-800">偏差</th>
@@ -916,6 +947,7 @@ const BrbStabilityChecker: React.FC = () => {
                         {/* 稳定性核算 */}
                         <th className="px-2 py-1 border-b border-r border-gray-300 bg-gray-100 font-medium text-xs text-gray-800">Fcr1</th>
                         <th className="px-2 py-1 border-b border-r border-gray-300 bg-gray-100 font-medium text-xs text-gray-800">Fcr2</th>
+                        <th className="px-2 py-1 border-b border-r border-gray-300 bg-gray-100 font-medium text-xs text-gray-800">Fcr3</th>
                         <th className="px-2 py-1 border-b border-r border-gray-300 bg-gray-100 font-medium text-xs text-gray-800">Fcr</th>
                         <th className="px-2 py-1 border-b border-r border-gray-300 bg-gray-100 font-medium text-xs text-gray-800">Fcr/Fy</th>
                         <th className="px-2 py-1 border-b border-r border-gray-300 bg-gray-100 font-medium text-xs text-gray-800">是否稳定</th>
@@ -939,6 +971,9 @@ const BrbStabilityChecker: React.FC = () => {
                             <td className="px-2 py-1 border-b border-r border-gray-300 text-xs text-center">{result.tubeIy.toExponential(2)}</td>
                             <td className="px-2 py-1 border-b border-r border-gray-300 text-xs text-center">{result.tubeIz.toExponential(2)}</td>
                             
+                            {/* 混凝土截面计算 */}
+                            <td className="px-2 py-1 border-b border-r border-gray-300 text-xs text-center">{result.concreteArea}</td>
+                            
                             {/* 芯材屈服力核算 */}
                             <td className={`px-2 py-1 border-b border-r border-gray-300 text-xs text-center ${Math.abs(result.deviationPercentage) <= 5 ? 'bg-green-100' : Math.abs(result.deviationPercentage) <= 10 ? 'bg-orange-100' : 'bg-red-100'}`}>{result.theoreticalFy}</td>
                             <td className={`px-2 py-1 border-b border-r border-gray-300 text-xs text-center ${Math.abs(result.deviationPercentage) <= 5 ? 'bg-green-100' : Math.abs(result.deviationPercentage) <= 10 ? 'bg-orange-100' : 'bg-red-100'}`}>{result.deviationPercentage}%</td>
@@ -946,6 +981,7 @@ const BrbStabilityChecker: React.FC = () => {
                             {/* 稳定性核算 */}
                             <td className="px-2 py-1 border-b border-r border-gray-300 text-xs text-center">{result.fcr1}</td>
                             <td className="px-2 py-1 border-b border-r border-gray-300 text-xs text-center">{result.fcr2}</td>
+                            <td className="px-2 py-1 border-b border-r border-gray-300 text-xs text-center">{result.fcr3}</td>
                             <td className="px-2 py-1 border-b border-r border-gray-300 text-xs text-center">{result.fcr}</td>
                             <td className={`px-2 py-1 border-b border-r border-gray-300 text-xs text-center ${result.fcrFyRatio >= 1.2 ? 'bg-green-100' : result.fcrFyRatio >= 1.0 ? 'bg-orange-100' : 'bg-red-100'}`}>{result.fcrFyRatio.toFixed(2)}</td>
                             <td className={`px-2 py-1 border-b border-r border-gray-300 text-xs text-center ${result.fcrFyRatio >= 1.2 ? 'bg-green-100 text-green-800' : result.fcrFyRatio >= 1.0 ? 'bg-orange-100 text-orange-800' : 'bg-red-100 text-red-800'}`}>
@@ -989,10 +1025,10 @@ const BrbStabilityChecker: React.FC = () => {
                       <li>• 惯性矩计算：</li>
                       <li>  - 工字形截面：分别计算腹板和翼缘的惯性矩并叠加</li>
                       <li>  - 丨字形截面：使用矩形截面惯性矩公式</li>
-                      <li>• 欧拉临界力计算公式：Fcr = (k×π²×E×I)/(L²)/1000 (kN)</li>
-                      <li>  - Fcr1 = 芯板的欧拉临界力</li>
-                      <li>  - Fcr2 = 套筒的欧拉临界力</li>
-                      <li>  - Fcr = Fcr1 + Fcr2 (总屈曲强度)</li>
+                      <li>• 欧拉临界力计算公式：Fcr1 = (k×π²×E×I)/(L²)/1000 (kN)</li>
+                      <li>• 套筒屈服力计算公式：Fcr2 = A₁×σ/1000 (kN)</li>
+                      <li>• 混凝土作用力计算公式：Fcr3 = A₂×σ_c/1000 (kN)</li>
+                      <li>• 总屈曲强度：Fcr = Fcr1 + Fcr2 + Fcr3</li>
                       <li>• 约束系数 k = 1.0（k为支撑的有效长度系数，根据支撑的约束条件确定，此处取1.0）</li>
                       <li>• π 取 3.14</li>
                     </ul>

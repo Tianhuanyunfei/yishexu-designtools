@@ -1,0 +1,179 @@
+{
+  "projectName": "鱼肴二期厂房",
+  "parameterTables": [
+    {
+      "id": "1",
+      "designForce": "4200",
+      "width": "200",
+      "height": "200",
+      "thickness": "25",
+      "tubeWidth": "350",
+      "tubeThickness": "4",
+      "weld": "20",
+      "coreMaterial": "Q235B",
+      "yieldStrength": "294",
+      "template": "王（丨）",
+      "lengthQuantityTable": [
+        {
+          "length": "8700",
+          "quantity": "1"
+        },
+        {
+          "length": "8000",
+          "quantity": "1"
+        }
+      ]
+    },
+    {
+      "id": "1786168963718-2kuufc",
+      "designForce": "4200",
+      "width": "200",
+      "height": "200",
+      "thickness": "25",
+      "tubeWidth": "300",
+      "tubeThickness": "4",
+      "weld": "20",
+      "coreMaterial": "Q235B",
+      "yieldStrength": "294",
+      "template": "王（丨）",
+      "lengthQuantityTable": [
+        {
+          "length": "7000",
+          "quantity": "1"
+        },
+        {
+          "length": "6900",
+          "quantity": "2"
+        },
+        {
+          "length": "5700",
+          "quantity": "1"
+        },
+        {
+          "length": "4800",
+          "quantity": "1"
+        },
+        {
+          "length": "4400",
+          "quantity": "1"
+        }
+      ]
+    },
+    {
+      "id": "1786168828453",
+      "designForce": "3000",
+      "width": "170",
+      "height": "170",
+      "thickness": "20",
+      "tubeWidth": "250",
+      "tubeThickness": "4",
+      "weld": "16",
+      "coreMaterial": "Q235B",
+      "yieldStrength": "294",
+      "template": "王（丨）",
+      "lengthQuantityTable": [
+        {
+          "length": "5100",
+          "quantity": "4"
+        },
+        {
+          "length": "5000",
+          "quantity": "2"
+        },
+        {
+          "length": "4700",
+          "quantity": "2"
+        },
+        {
+          "length": "4600",
+          "quantity": "2"
+        },
+        {
+          "length": "4400",
+          "quantity": "2"
+        },
+        {
+          "length": "4100",
+          "quantity": "4"
+        },
+        {
+          "length": "4000",
+          "quantity": "2"
+        },
+        {
+          "length": "3600",
+          "quantity": "2"
+        },
+        {
+          "length": "3400",
+          "quantity": "4"
+        },
+        {
+          "length": "3300",
+          "quantity": "2"
+        },
+        {
+          "length": "2800",
+          "quantity": "2"
+        }
+      ]
+    },
+    {
+      "id": "1786168828454",
+      "designForce": "2500",
+      "width": "150",
+      "height": "150",
+      "thickness": "20",
+      "tubeWidth": "250",
+      "tubeThickness": "4",
+      "weld": "16",
+      "coreMaterial": "Q235B",
+      "yieldStrength": "294",
+      "template": "王（丨）",
+      "lengthQuantityTable": [
+        {
+          "length": "5600",
+          "quantity": "2"
+        },
+        {
+          "length": "5400",
+          "quantity": "2"
+        },
+        {
+          "length": "4400",
+          "quantity": "2"
+        },
+        {
+          "length": "4300",
+          "quantity": "2"
+        },
+        {
+          "length": "4100",
+          "quantity": "2"
+        },
+        {
+          "length": "3800",
+          "quantity": "2"
+        },
+        {
+          "length": "3300",
+          "quantity": "2"
+        },
+        {
+          "length": "3100",
+          "quantity": "2"
+        },
+        {
+          "length": "2500",
+          "quantity": "2"
+        },
+        {
+          "length": "2200",
+          "quantity": "2"
+        }
+      ]
+    }
+  ],
+  "totalQuantity": 56,
+  "version": "1.0"
+}

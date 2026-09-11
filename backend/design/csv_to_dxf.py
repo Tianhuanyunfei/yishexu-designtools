@@ -1,10 +1,14 @@
 import ezdxf
 import csv
-import logging
+import sys
+import os
 
-# 配置日志记录
-logging.basicConfig(filename='dxf_csv_conversion.log', level=logging.INFO,
-                    format='%(asctime)s - %(levelname)s - %(message)s')
+# 添加项目根目录到Python路径
+sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
+
+# 导入日志模块
+from app.utils.logger import function_logger as logging
+from app.utils.logger import function_alarm_logger as alarm_logging
 
 # 全局缩放因子，默认为5
 global_scale_factor = 5
@@ -69,11 +73,9 @@ def drawing(doc, msp, input_file, output_file):
     dimstyle_name = ""  # 用于存储默认dimstyle名称
     for line_num, row in enumerate(data, start=2):  # 从第 2 行开始计数
         line_num -= 1
-        # 调试：检查row的数据类型
-        print(f"Row type at line {line_num}: {type(row)}")
-        print(f"Row content: {row}")
+        # 检查row的数据类型
         if not isinstance(row, dict):
-            print(f"ERROR: Row at line {line_num} is not a dict!")
+            logging.error(f"Row at line {line_num} is not a dict!")
        
         # 首先读取图层信息
         if row["实体类型"] == "图层":
@@ -132,7 +134,7 @@ def drawing(doc, msp, input_file, output_file):
             doc.dimstyles.new(name, dxfattribs=attribs)
         else:
             # 如果已存在，可以选择更新属性或跳过
-            print(f"dimstyle '{name}' 已存在，将跳过创建")
+            logging.info(f"dimstyle '{name}' 已存在，将跳过创建")
 
 
     # 第二次遍历，处理实体
@@ -188,9 +190,9 @@ def drawing(doc, msp, input_file, output_file):
                 logging.warning(f"文件 {input_file} 第 {line_num} 行发生未知错误: {str(e)}，将略过此数据。")
 
     # 保存 DXF 文件
-    print(f"正在保存 DXF 文件: {output_file}")
+    logging.info(f"正在保存 DXF 文件: {output_file}")
     doc.saveas(output_file)
-    print(f"DXF 文件已成功保存")
+    logging.info(f"DXF 文件已成功保存")
     logging.info(f"{input_file} 已成功转换为 {output_file} (CSV to DXF)")
 
 

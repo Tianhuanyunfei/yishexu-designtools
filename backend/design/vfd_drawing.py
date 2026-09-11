@@ -1,6 +1,13 @@
 import csv
-import logging
 import os
+import sys
+
+# 添加项目根目录到Python路径
+sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
+
+# 导入日志模块
+from app.utils.logger import app_logger as logging
+
 from csv_to_dxf import csv_to_dxf
 from csv_to_dxf import csv_add_dxf
 
@@ -310,7 +317,7 @@ def offset(csv_data, offset_x, offset_y):
         try:
             return float(value) + float(offset)
         except (ValueError, TypeError):
-            print(f"警告: 无法将 '{value}' 或 '{offset}' 转换为数值")
+            logging.warning(f"警告: 无法将 '{value}' 或 '{offset}' 转换为数值")
             return value
 
     for line_num, row in enumerate(csv_data[1:], start=2):  # 从第 2 行开始处理

@@ -1,0 +1,81 @@
+.excel-editor-container {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  flex-direction: column;
+  background-color: #f5f5f5;
+}
+
+.excel-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.5rem 1rem;
+  background-color: white;
+  border-bottom: 1px solid #e5e7eb;
+  box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1);
+  z-index: 10;
+  min-height: 48px;
+  flex-shrink: 0;
+}
+
+.luckysheet-container {
+  flex: 1;
+  width: 100%;
+  position: relative;
+  overflow: hidden;
+}
+
+/* 确保 Luckysheet 填满容器 */
+.luckysheet-container > div {
+  width: 100% !important;
+  height: 100% !important;
+}
+
+/* 覆盖 Luckysheet 的一些默认样式 */
+.luckysheet {
+  position: absolute !important;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+}
+
+/* 确保 luckysheet 容器正确显示 */
+#luckysheet-container {
+  width: 100%;
+  height: 100%;
+  position: relative;
+}
+
+/* 确保 Luckysheet 的工具栏在最上层 */
+.luckysheet-toolbar-button,
+.luckysheet-toolbar-menu-button,
+.luckysheet-toolbar-combo-button {
+  z-index: 100 !important;
+}
+
+/* 确保 Luckysheet 的菜单在最上层 */
+.luckysheet-modal-dialog,
+.luckysheet-modal-dialog-mask {
+  z-index: 200 !important;
+}
+
+/* Luckysheet 内部工具栏容器 */
+.luckysheet-toolbar {
+  z-index: 50 !important;
+}
+
+/* Luckysheet 下拉菜单 */
+.luckysheet-toolbar-dropdown,
+.luckysheet-toolbar-dropdown-menu {
+  z-index: 150 !important;
+}
+
+/* Luckysheet 右键菜单 */
+.luckysheet-context-menu {
+  z-index: 200 !important;
+}

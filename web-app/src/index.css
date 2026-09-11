@@ -20,6 +20,10 @@
   .btn-secondary {
     @apply bg-brb-orange-200 hover:bg-brb-orange-300 text-gray-800 font-semibold py-3 px-6 rounded-lg transition-colors duration-200 shadow-brb;
   }
+
+  .btn-danger {
+    @apply bg-red-600 hover:bg-red-700 text-white font-semibold py-3 px-6 rounded-lg transition-colors duration-200 shadow-brb;
+  }
   
   .card {
     @apply bg-white rounded-xl shadow-brb border border-gray-200;

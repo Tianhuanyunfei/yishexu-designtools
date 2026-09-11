@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
+import { normalizeSectionTemplate } from '../utils/sectionTemplate';
 
 interface ParameterTable {
   id: string;
@@ -29,23 +30,27 @@ interface BrbTubeLayoutProps {
   onFilesGenerated: (files: GeneratedFile[]) => void;
 }
 
+/** 方管排布：大项目 deep 搜索可能需数分钟，结果优先于速度 */
+const TUBE_LAYOUT_FETCH_TIMEOUT_MS = 5 * 60 * 1000;
+
+function getTubeLayoutProgressHint(elapsedSec: number): string {
+  if (elapsedSec < 15) return '正在生成方管排布图…';
+  if (elapsedSec < 45) return '并联算法竞选中（含深度搜索），计时增加表示仍在计算…';
+  if (elapsedSec < 120) return '深度搜索耗时较长属正常，请稍候…';
+  return '仍在计算最优方案，请勿关闭页面…';
+}
+
 const BrbTubeLayout: React.FC<BrbTubeLayoutProps> = ({
   projectName,
   parameterTables,
   totalQuantity,
   onFilesGenerated
 }) => {
-  // 简单的toast消息显示函数
-  const showToast = (message: string, type: 'success' | 'error' | 'info') => {
-    // 创建toast元素
+  const showToast = (message: string, type: 'success' | 'error' | 'info', duration = 3000) => {
     const toast = document.createElement('div');
     toast.className = `fixed top-4 right-4 px-4 py-2 rounded-lg shadow-lg z-50 transition-all duration-300 ease-in-out transform translate-y-0 opacity-100 ${type === 'success' ? 'bg-green-500 text-white' : type === 'error' ? 'bg-red-500 text-white' : 'bg-blue-500 text-white'}`;
     toast.textContent = message;
-    
-    // 添加到文档
     document.body.appendChild(toast);
-    
-    // 3秒后移除
     setTimeout(() => {
       toast.classList.add('translate-y-[-20px]', 'opacity-0');
       setTimeout(() => {
@@ -53,16 +58,18 @@ const BrbTubeLayout: React.FC<BrbTubeLayoutProps> = ({
           document.body.removeChild(toast);
         }
       }, 300);
-    }, 3000);
+    }, duration);
   };
 
-  // 处理文件生成的函数
   const handleFilesGenerated = (files: GeneratedFile[]) => {
     if (files.length > 0) {
       onFilesGenerated(files);
     }
   };
+
   const [isGeneratingTubeLayout, setIsGeneratingTubeLayout] = useState(false);
+  const [tubeLayoutElapsedSec, setTubeLayoutElapsedSec] = useState(0);
+  const [tubeLayoutStatus, setTubeLayoutStatus] = useState('');
 
   const generateTubeLayout = async () => {
     if (!projectName) {
@@ -75,12 +82,17 @@ const BrbTubeLayout: React.FC<BrbTubeLayoutProps> = ({
       return;
     }
 
+    let progressTimer: ReturnType<typeof setInterval> | null = null;
+    let timeoutId: ReturnType<typeof setTimeout> | null = null;
+
     try {
       setIsGeneratingTubeLayout(true);
-      showToast('正在生成方管排布图，请稍候...', 'info');
+      setTubeLayoutElapsedSec(0);
+      setTubeLayoutStatus('正在启动排布计算…');
+      showToast('方管排布已开始计算，请查看按钮下方进度提示', 'info', 4000);
 
       const validParameterTables = parameterTables.map(table => {
-        const templateValue = table.template || '王一';
+        const templateValue = normalizeSectionTemplate(table.template);
         return {
           ...table,
           template: templateValue,
@@ -88,10 +100,19 @@ const BrbTubeLayout: React.FC<BrbTubeLayoutProps> = ({
         };
       });
 
+      const startedAt = Date.now();
+      const tickProgress = () => {
+        const elapsed = Math.floor((Date.now() - startedAt) / 1000);
+        setTubeLayoutElapsedSec(elapsed);
+        setTubeLayoutStatus(getTubeLayoutProgressHint(elapsed));
+      };
+      tickProgress();
+      progressTimer = setInterval(tickProgress, 1000);
+
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => {
+      timeoutId = setTimeout(() => {
         controller.abort();
-      }, 60000);
+      }, TUBE_LAYOUT_FETCH_TIMEOUT_MS);
 
       const response = await fetch('/api/brb/tube-layout', {
         method: 'POST',
@@ -106,7 +127,7 @@ const BrbTubeLayout: React.FC<BrbTubeLayoutProps> = ({
         signal: controller.signal
       });
 
-      clearTimeout(timeoutId);
+      if (timeoutId) clearTimeout(timeoutId);
 
       if (!response.ok) {
         let errorData;
@@ -191,13 +212,20 @@ const BrbTubeLayout: React.FC<BrbTubeLayoutProps> = ({
         showToast(`方管排布图生成成功！文件: ${newFile.name}`, 'success');
       }
     } catch (error: any) {
-      clearTimeout((error as any).timeoutId);
-      if ((error as any).name === 'AbortError') {
-        showToast('生成方管排布图超时，请检查网络连接或稍后重试', 'error');
+      if (timeoutId) clearTimeout(timeoutId);
+      if (error?.name === 'AbortError') {
+        showToast(
+          `生成超时（已等待 ${Math.floor(TUBE_LAYOUT_FETCH_TIMEOUT_MS / 1000)} 秒）。若计时曾持续增加，多半是深度搜索过久而非卡死，可稍后重试。`,
+          'error',
+          8000
+        );
       } else {
         showToast(`生成方管排布图失败: ${error.message}`, 'error');
       }
     } finally {
+      if (progressTimer) clearInterval(progressTimer);
+      setTubeLayoutStatus('');
+      setTubeLayoutElapsedSec(0);
       setIsGeneratingTubeLayout(false);
     }
   };
@@ -206,17 +234,28 @@ const BrbTubeLayout: React.FC<BrbTubeLayoutProps> = ({
     <div className="mt-6">
       <div className="card p-6">
         <h3 className="text-lg font-semibold text-gray-900 mb-4">方管排布图生成</h3>
-        <div className="flex justify-end">
+        <div className="flex flex-col items-end gap-3">
           <button 
             className="btn-primary flex items-center space-x-2 disabled:opacity-70 disabled:cursor-not-allowed"
             onClick={generateTubeLayout}
             disabled={isGeneratingTubeLayout}
           >
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <svg xmlns="http://www.w3.org/2000/svg" className={`h-4 w-4 ${isGeneratingTubeLayout ? 'animate-spin' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
             </svg>
-            <span>{isGeneratingTubeLayout ? '生成中...' : '生成方管排布图'}</span>
+            <span>
+              {isGeneratingTubeLayout
+                ? `排布计算中 ${tubeLayoutElapsedSec}s`
+                : '生成方管排布图'}
+            </span>
           </button>
+          {isGeneratingTubeLayout && (
+            <div className="w-full rounded-md border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-900">
+              <div className="font-medium">方管排布计算进行中 · {tubeLayoutElapsedSec} 秒</div>
+              <div className="mt-1 text-blue-800">{tubeLayoutStatus || '正在启动排布计算…'}</div>
+              <div className="mt-1 text-xs text-blue-600">秒数持续增加表示仍在深度搜索，并非卡住。</div>
+            </div>
+          )}
         </div>
       </div>
     </div>

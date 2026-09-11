@@ -1,0 +1,61 @@
+{
+  "projectName": "含章园托班加固项目",
+  "parameterTables": [
+    {
+      "id": "1",
+      "designForce": "2100",
+      "width": "150",
+      "height": "150",
+      "thickness": "16",
+      "tubeWidth": "200",
+      "tubeThickness": "4",
+      "weld": "12",
+      "coreMaterial": "Q235B",
+      "template": "王一",
+      "lengthQuantityTable": [
+        {
+          "length": "4700",
+          "quantity": "8"
+        }
+      ]
+    },
+    {
+      "id": "1774406772621",
+      "designForce": "2600",
+      "width": "150",
+      "height": "150",
+      "thickness": "20",
+      "tubeWidth": "200",
+      "tubeThickness": "4",
+      "weld": "16",
+      "coreMaterial": "Q235B",
+      "template": "王一",
+      "lengthQuantityTable": [
+        {
+          "length": "4700",
+          "quantity": "4"
+        }
+      ]
+    },
+    {
+      "id": "1774406772916",
+      "designForce": "3100",
+      "width": "150",
+      "height": "150",
+      "thickness": "25",
+      "tubeWidth": "200",
+      "tubeThickness": "4",
+      "weld": "20",
+      "coreMaterial": "Q235B",
+      "template": "王一",
+      "lengthQuantityTable": [
+        {
+          "length": "4700",
+          "quantity": "8"
+        }
+      ]
+    }
+  ],
+  "totalQuantity": 20,
+  "version": "1.0"
+}

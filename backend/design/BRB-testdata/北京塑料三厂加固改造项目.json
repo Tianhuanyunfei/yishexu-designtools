@@ -1,0 +1,25 @@
+{
+  "projectName": "北京塑料三厂加固改造项目",
+  "parameterTables": [
+    {
+      "id": "1",
+      "designForce": "1150",
+      "width": "160",
+      "height": "160",
+      "thickness": "8",
+      "tubeWidth": "200",
+      "tubeThickness": "4",
+      "weld": "6",
+      "coreMaterial": "Q235B",
+      "template": "王一",
+      "lengthQuantityTable": [
+        {
+          "length": "4900",
+          "quantity": "32"
+        }
+      ]
+    }
+  ],
+  "totalQuantity": 32,
+  "version": "1.0"
+}

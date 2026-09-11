@@ -1,0 +1,30 @@
+{
+  "projectName": "北京海政印刷厂",
+  "parameterTables": [
+    {
+      "id": "1",
+      "designForce": "1500",
+      "width": "140",
+      "height": "140",
+      "thickness": "12",
+      "tubeWidth": "200",
+      "tubeThickness": "4",
+      "weld": "10",
+      "coreMaterial": "Q235B",
+      "yieldStrength": "294",
+      "template": "王（丨）",
+      "lengthQuantityTable": [
+        {
+          "length": "4000",
+          "quantity": "8"
+        },
+        {
+          "length": "3500",
+          "quantity": "8"
+        }
+      ]
+    }
+  ],
+  "totalQuantity": 16,
+  "version": "1.0"
+}

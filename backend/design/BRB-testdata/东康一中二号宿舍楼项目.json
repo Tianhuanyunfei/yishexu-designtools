@@ -1,0 +1,25 @@
+{
+  "projectName": "东康一中二号宿舍楼项目",
+  "parameterTables": [
+    {
+      "id": "1",
+      "designForce": "1500",
+      "width": "140",
+      "height": "140",
+      "thickness": "12",
+      "tubeWidth": "200",
+      "tubeThickness": "4",
+      "weld": "10",
+      "coreMaterial": "Q235B",
+      "template": "王一",
+      "lengthQuantityTable": [
+        {
+          "length": "3100",
+          "quantity": "128"
+        }
+      ]
+    }
+  ],
+  "totalQuantity": 128,
+  "version": "1.0"
+}

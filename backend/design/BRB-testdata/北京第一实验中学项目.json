@@ -1,0 +1,175 @@
+{
+  "projectName": "北京第一实验中学项目",
+  "parameterTables": [
+    {
+      "id": "1",
+      "designForce": "5500",
+      "width": "210",
+      "height": "210",
+      "thickness": "30",
+      "tubeWidth": "250",
+      "tubeThickness": "4",
+      "weld": "25",
+      "coreMaterial": "Q235B",
+      "template": "王一",
+      "lengthQuantityTable": [
+        {
+          "length": "5500",
+          "quantity": "4"
+        },
+        {
+          "length": "5200",
+          "quantity": "3"
+        },
+        {
+          "length": "5000",
+          "quantity": "7"
+        },
+        {
+          "length": "4700",
+          "quantity": "25"
+        },
+        {
+          "length": "4600",
+          "quantity": "4"
+        },
+        {
+          "length": "4500",
+          "quantity": "4"
+        },
+        {
+          "length": "4400",
+          "quantity": "4"
+        },
+        {
+          "length": "4200",
+          "quantity": "2"
+        }
+      ]
+    },
+    {
+      "id": "1776994332430",
+      "designForce": "4100",
+      "width": "170",
+      "height": "170",
+      "thickness": "30",
+      "tubeWidth": "200",
+      "tubeThickness": "4",
+      "weld": "20",
+      "coreMaterial": "Q235B",
+      "template": "王一",
+      "lengthQuantityTable": [
+        {
+          "length": "4200",
+          "quantity": "2"
+        },
+        {
+          "length": "3800",
+          "quantity": "60"
+        },
+        {
+          "length": "3600",
+          "quantity": "16"
+        },
+        {
+          "length": "3400",
+          "quantity": "16"
+        },
+        {
+          "length": "3100",
+          "quantity": "12"
+        }
+      ]
+    },
+    {
+      "id": "1776994332885",
+      "designForce": "3100",
+      "width": "150",
+      "height": "150",
+      "thickness": "25",
+      "tubeWidth": "200",
+      "tubeThickness": "4",
+      "weld": "18",
+      "coreMaterial": "Q235B",
+      "template": "王一",
+      "lengthQuantityTable": [
+        {
+          "length": "4000",
+          "quantity": "1"
+        },
+        {
+          "length": "3800",
+          "quantity": "49"
+        },
+        {
+          "length": "3600",
+          "quantity": "12"
+        },
+        {
+          "length": "3400",
+          "quantity": "8"
+        },
+        {
+          "length": "3200",
+          "quantity": "6"
+        },
+        {
+          "length": "3100",
+          "quantity": "6"
+        }
+      ]
+    },
+    {
+      "id": "1776994333293",
+      "designForce": "2400",
+      "width": "170",
+      "height": "170",
+      "thickness": "16",
+      "tubeWidth": "200",
+      "tubeThickness": "4",
+      "weld": "12",
+      "coreMaterial": "Q235B",
+      "template": "王一",
+      "lengthQuantityTable": [
+        {
+          "length": "5200",
+          "quantity": "5"
+        },
+        {
+          "length": "5000",
+          "quantity": "10"
+        },
+        {
+          "length": "4900",
+          "quantity": "1"
+        },
+        {
+          "length": "4600",
+          "quantity": "10"
+        },
+        {
+          "length": "4400",
+          "quantity": "1"
+        },
+        {
+          "length": "4200",
+          "quantity": "5"
+        },
+        {
+          "length": "4000",
+          "quantity": "7"
+        },
+        {
+          "length": "3800",
+          "quantity": "59"
+        },
+        {
+          "length": "3600",
+          "quantity": "56"
+        }
+      ]
+    }
+  ],
+  "totalQuantity": 395,
+  "version": "1.0"
+}

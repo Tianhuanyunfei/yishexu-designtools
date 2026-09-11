@@ -1,0 +1,121 @@
+{
+  "projectName": "房山邢家坞学校项目",
+  "parameterTables": [
+    {
+      "id": "1",
+      "designForce": "4000",
+      "width": "190",
+      "height": "190",
+      "thickness": "25",
+      "tubeWidth": "250",
+      "tubeThickness": "4",
+      "weld": "18",
+      "coreMaterial": "Q235B",
+      "template": "王一",
+      "lengthQuantityTable": [
+        {
+          "length": "6800",
+          "quantity": "4"
+        },
+        {
+          "length": "7100",
+          "quantity": "11"
+        },
+        {
+          "length": "7700",
+          "quantity": "1"
+        }
+      ]
+    },
+    {
+      "id": "1785994742994",
+      "designForce": "2350",
+      "width": "140",
+      "height": "140",
+      "thickness": "20",
+      "tubeWidth": "200",
+      "tubeThickness": "4",
+      "weld": "13",
+      "coreMaterial": "Q235B",
+      "template": "王一",
+      "lengthQuantityTable": [
+        {
+          "length": "4200",
+          "quantity": "8"
+        },
+        {
+          "length": "5300",
+          "quantity": "15"
+        },
+        {
+          "length": "6000",
+          "quantity": "1"
+        },
+        {
+          "length": "7600",
+          "quantity": "9"
+        },
+        {
+          "length": "7800",
+          "quantity": "3"
+        }
+      ]
+    },
+    {
+      "id": "1785994855809",
+      "designForce": "1500",
+      "width": "140",
+      "height": "140",
+      "thickness": "12",
+      "tubeWidth": "200",
+      "tubeThickness": "4",
+      "weld": "10",
+      "coreMaterial": "Q235B",
+      "template": "王一",
+      "lengthQuantityTable": [
+        {
+          "length": "3200",
+          "quantity": "2"
+        },
+        {
+          "length": "3500",
+          "quantity": "8"
+        },
+        {
+          "length": "3700",
+          "quantity": "2"
+        },
+        {
+          "length": "3900",
+          "quantity": "6"
+        },
+        {
+          "length": "4200",
+          "quantity": "6"
+        },
+        {
+          "length": "6400",
+          "quantity": "2"
+        },
+        {
+          "length": "6600",
+          "quantity": "7"
+        },
+        {
+          "length": "6900",
+          "quantity": "3"
+        },
+        {
+          "length": "7200",
+          "quantity": "1"
+        },
+        {
+          "length": "7800",
+          "quantity": "4"
+        }
+      ]
+    }
+  ],
+  "totalQuantity": 93,
+  "version": "1.0"
+}

@@ -1,0 +1,99 @@
+{
+  "projectName": "顺义北京口腔医院",
+  "parameterTables": [
+    {
+      "id": "1",
+      "designForce": "2600",
+      "width": "150",
+      "height": "150",
+      "thickness": "20",
+      "tubeWidth": "200",
+      "tubeThickness": "4",
+      "weld": "16",
+      "coreMaterial": "Q235B",
+      "yieldStrength": "294",
+      "template": "王（丨）",
+      "lengthQuantityTable": [
+        {
+          "length": "4000",
+          "quantity": "2"
+        },
+        {
+          "length": "3700",
+          "quantity": "2"
+        },
+        {
+          "length": "3400",
+          "quantity": "2"
+        }
+      ]
+    },
+    {
+      "id": "1787623608551",
+      "designForce": "2300",
+      "width": "170",
+      "height": "170",
+      "thickness": "16",
+      "tubeWidth": "200",
+      "tubeThickness": "4",
+      "weld": "12",
+      "coreMaterial": "Q235B",
+      "yieldStrength": "294",
+      "template": "王（丨）",
+      "lengthQuantityTable": [
+        {
+          "length": "4000",
+          "quantity": "10"
+        }
+      ]
+    },
+    {
+      "id": "1787623608552",
+      "designForce": "2000",
+      "width": "150",
+      "height": "150",
+      "thickness": "16",
+      "tubeWidth": "200",
+      "tubeThickness": "4",
+      "weld": "12",
+      "coreMaterial": "Q235B",
+      "yieldStrength": "294",
+      "template": "王（丨）",
+      "lengthQuantityTable": [
+        {
+          "length": "4000",
+          "quantity": "10"
+        },
+        {
+          "length": "3700",
+          "quantity": "6"
+        }
+      ]
+    },
+    {
+      "id": "1787623608553",
+      "designForce": "1600",
+      "width": "150",
+      "height": "150",
+      "thickness": "12",
+      "tubeWidth": "200",
+      "tubeThickness": "",
+      "weld": "",
+      "coreMaterial": "Q235B",
+      "yieldStrength": "294",
+      "template": "王（丨）",
+      "lengthQuantityTable": [
+        {
+          "length": "4000",
+          "quantity": "2"
+        },
+        {
+          "length": "3000",
+          "quantity": "4"
+        }
+      ]
+    }
+  ],
+  "totalQuantity": 38,
+  "version": "1.0"
+}

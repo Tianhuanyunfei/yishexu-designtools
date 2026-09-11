@@ -1,0 +1,51 @@
+{
+  "projectName": "海淀朱房地块项目",
+  "parameterTables": [
+    {
+      "id": "1",
+      "designForce": "1500",
+      "width": "140",
+      "height": "140",
+      "thickness": "8",
+      "tubeWidth": "200",
+      "tubeThickness": "4",
+      "weld": "6",
+      "coreMaterial": "Q235B",
+      "template": "王一",
+      "lengthQuantityTable": [
+        {
+          "length": "3300",
+          "quantity": "56"
+        },
+        {
+          "length": "2900",
+          "quantity": "16"
+        }
+      ]
+    },
+    {
+      "id": "1772157047393",
+      "designForce": "1000",
+      "width": "170",
+      "height": "170",
+      "thickness": "10",
+      "tubeWidth": "200",
+      "tubeThickness": "4",
+      "weld": "8",
+      "coreMaterial": "Q235B",
+      "template": "王一",
+      "lengthQuantityTable": [
+        {
+          "length": "4300",
+          "quantity": "6"
+        },
+        {
+          "length": "3800",
+          "quantity": "18"
+        }
+      ]
+    }
+  ],
+  "totalQuantity": 96,
+  "version": "1.0"
+}

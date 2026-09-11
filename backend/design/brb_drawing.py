@@ -1,11 +1,17 @@
 import csv
-import logging
 import os  # 新增：导入os模块用于设置工作目录
 
 # 修复导入路径
 import sys
 current_dir = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, current_dir)
+
+# 添加项目根目录到Python路径
+sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
+
+# 导入日志模块
+from app.utils.logger import function_logger as logging
+from app.utils.logger import function_alarm_logger as alarm_logging
 
 from csv_to_dxf import csv_to_dxf
 
@@ -95,7 +101,7 @@ def update_data1(csv_data, input_param, width, height, thick, force, tube_width,
         update_cell_value(csv_data, 297, column_index_map, '值', f'芯板材料：{core_material}')
 
     except (IndexError, ValueError) as e:
-        logging.error(f"修改 CSV 数据时出现错误: {str(e)}")
+        alarm_logging.error(f"修改 CSV 数据时出现错误: {str(e)}")
         raise  # 重新抛出异常，让上层调用者处理
 
     return csv_data
@@ -178,7 +184,7 @@ def update_data2(csv_data, input_param, width, height, thick, force, tube_width,
         
 
     except (IndexError, ValueError) as e:
-        logging.error(f"修改 CSV 数据时出现错误: {str(e)}")
+        alarm_logging.error(f"修改 CSV 数据时出现错误: {str(e)}")
         raise  # 重新抛出异常，让上层调用者处理
 
     return csv_data
@@ -267,7 +273,7 @@ def update_data3(csv_data, input_param, width, height, thick, force, tube_width,
         update_cell_value(csv_data, 310, column_index_map, '值', f'芯板材料：{core_material}')
 
     except (IndexError, ValueError) as e:
-        logging.error(f"修改 CSV 数据时出现错误: {str(e)}")
+        alarm_logging.error(f"修改 CSV 数据时出现错误: {str(e)}")
         raise  # 重新抛出异常，让上层调用者处理
 
     return csv_data
@@ -280,14 +286,26 @@ template_configs = {
         'csv_file': os.path.join(current_dir, 'data', '王工.csv'),
         'update_function': update_data1
     },
+    '王（工）': {
+        'csv_file': os.path.join(current_dir, 'data', '王工.csv'),
+        'update_function': update_data1
+    },
     '十一': {
+        'csv_file': os.path.join(current_dir, 'data', '十一.csv'),
+        'update_function': update_data2
+    },
+    '十': {
         'csv_file': os.path.join(current_dir, 'data', '十一.csv'),
         'update_function': update_data2
     },
     '王一': {
         'csv_file': os.path.join(current_dir, 'data', '王一.csv'),
         'update_function': update_data3
-    }
+    },
+    '王（丨）': {
+        'csv_file': os.path.join(current_dir, 'data', '王一.csv'),
+        'update_function': update_data3
+    },
 }
 
 """处理参数"""
@@ -299,10 +317,9 @@ def brb_drawing(data_table, project_folder=None):
     generated_files = []
     for row in data_table:
         try:
-            logging.info(f"开始处理数据行: {row}")
             # 确保row是字典类型
             if not isinstance(row, dict):
-                logging.error(f"数据行不是字典类型: {row}")
+                alarm_logging.error(f"数据行不是字典类型")
                 continue
             
             # 从数据行中获取各参数值，使用get方法并设置默认值
@@ -319,7 +336,9 @@ def brb_drawing(data_table, project_folder=None):
                 "core_material": row.get("core_material", "Q235"),  # 芯板材料，默认值Q235
                 "table": row.get("length_quantity", [])  # 长度-数量表格
             }
-            logging.info(f"解析参数: {parameters}")
+            project_name = parameters.get("project_name", "未知项目")
+            force = parameters.get("force", "未知力值")
+            logging.info(f"开始处理 {project_name} 项目，力值: {force}")
 
             # 验证必要参数是否存在
             if not validate_required_parameters(parameters):
@@ -336,7 +355,7 @@ def brb_drawing(data_table, project_folder=None):
             # 如果找不到模板配置，直接报错
             if config is None:
                 error_msg = f"未知的模板类型: {parameters['template']}，可用模板: {list(template_configs.keys())}"
-                logging.error(error_msg)
+                alarm_logging.error(error_msg)
                 raise ValueError(error_msg)
 
             # 处理并生成图纸
@@ -345,14 +364,14 @@ def brb_drawing(data_table, project_folder=None):
                 generated_files.append(file_path)
 
         except Exception as e:
-            logging.error(f"处理数据行时出错: {str(e)}")
+            alarm_logging.error(f"处理数据行时出错: {str(e)}")
     return generated_files
 
 """验证必要参数是否存在"""
 def validate_required_parameters(params):
     # 确保params是字典类型
     if not isinstance(params, dict):
-        logging.error(f"参数不是字典类型: {params}")
+        alarm_logging.error(f"参数不是字典类型")
         return False
         
     required_params = ["template", "project_name", "width", "height", "thickness", "force", "tube_width", "tube_thickness", "weld"]
@@ -363,7 +382,7 @@ def validate_required_parameters(params):
             missing_params.append(param)
 
     if missing_params:
-        logging.warning(f"缺少必要参数: {', '.join(missing_params)}")
+        alarm_logging.warning(f"缺少必要参数: {', '.join(missing_params)}")
         return False
     return True
 
@@ -371,7 +390,7 @@ def validate_required_parameters(params):
 def convert_to_numeric(params):
     # 确保params是字典类型
     if not isinstance(params, dict):
-        logging.error(f"参数不是字典类型: {params}")
+        alarm_logging.error(f"参数不是字典类型")
         return None
         
     numeric_params = ["width", "height", "thickness", "force", "tube_width", "tube_thickness", "weld"]
@@ -379,33 +398,31 @@ def convert_to_numeric(params):
         try:
             params[param] = int(params[param])
         except ValueError:
-            logging.warning(f"'{param}' 必须为有效整数（如 123 ）！")
+            alarm_logging.warning(f"'{param}' 必须为有效整数（如 123 ）！")
             return None
     return params
 
 """生成图纸"""
 def process_and_generate_drawing(params, config, project_folder=None):
     try:
-        logging.info(f"开始处理图纸生成，参数: {params}")
-        logging.info(f"使用CSV模板文件: {config['csv_file']}")
+        project_name = params.get("project_name", "未知项目")
+        force = params.get("force", "未知力值")
+        logging.info(f"开始处理 {project_name} 项目的图纸生成")
+        
         # 读取CSV文件
         with open(config['csv_file'], 'r', encoding='utf-8') as file:
             csv_reader = csv.reader(file)
             csv_data = list(csv_reader)
-        logging.info(f"成功读取CSV模板文件，共 {len(csv_data)} 行")
 
         # 输入参数并更新数据
-        logging.info(f"调用更新函数: {config['update_function'].__name__}")
         csv_data = config['update_function'](csv_data, params["project_name"], params["width"],
                                              params["height"], params["thickness"], params["force"],
                                              params["tube_width"], params["tube_thickness"], params["weld"], params["core_material"], params["table"])
-        logging.info("成功更新CSV数据")
 
         # 将修改后的数据写回到 CSV 文件
         with open(config['csv_file'], 'w', newline='', encoding='utf-8') as file:
             writer = csv.writer(file)
             writer.writerows(csv_data)
-        logging.info(f"成功将修改后的数据写回到CSV文件: {config['csv_file']}")
 
         # 直接保存到项目文件夹，不弹出选择对话框
         default_filename = f'{params["project_name"]} BRB-{format_number(params["force"])}-L 方管宽{format_number(params["tube_width"])}.dxf'
@@ -423,7 +440,7 @@ def process_and_generate_drawing(params, config, project_folder=None):
             output_dxf_file = os.path.join(save_dir, default_filename)
             # 执行保存操作
             csv_to_dxf(config['csv_file'], output_dxf_file)
-            logging.info(f"图纸生成成功并保存到磁盘: {output_dxf_file}")
+            logging.info(f"图纸生成成功并保存到磁盘")
             return output_dxf_file
         else:
             # 如果没有提供项目文件夹，生成临时文件
@@ -450,10 +467,10 @@ def process_and_generate_drawing(params, config, project_folder=None):
             return (output, default_filename)
 
     except FileNotFoundError:
-        logging.error(f"文件不存在: {config['csv_file']}")
+        alarm_logging.error(f"文件不存在: {config['csv_file']}")
         return None
     except Exception as e:
-        logging.error(f"处理文件时出错: {str(e)}")
+        alarm_logging.error(f"处理文件时出错: {str(e)}")
         return None
     
     return None
@@ -519,7 +536,7 @@ if __name__ == "__main__":
     """
 
     data_table = [{
-        "template": "王工",
+        "template": "王（工）",
         "core_material": "Q345",  # 芯板材料
         "project_name": "等等的点点滴滴项目名称",
         "width": 160,  # 截面宽度

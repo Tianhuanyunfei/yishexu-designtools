@@ -1,0 +1,68 @@
+{
+  "projectName": "通州急救中心项目",
+  "parameterTables": [
+    {
+      "id": "1",
+      "designForce": "600",
+      "width": "160",
+      "height": "160",
+      "thickness": "12",
+      "tubeWidth": "200",
+      "tubeThickness": "4",
+      "weld": "10",
+      "coreMaterial": "Q235B",
+      "yieldStrength": "294",
+      "template": "十",
+      "lengthQuantityTable": [
+        {
+          "length": "3600",
+          "quantity": "4"
+        },
+        {
+          "length": "5800",
+          "quantity": "2"
+        }
+      ]
+    },
+    {
+      "id": "1787109717113",
+      "designForce": "1250",
+      "width": "140",
+      "height": "140",
+      "thickness": "10",
+      "tubeWidth": "200",
+      "tubeThickness": "4",
+      "weld": "8",
+      "coreMaterial": "Q235B",
+      "yieldStrength": "294",
+      "template": "王（丨）",
+      "lengthQuantityTable": [
+        {
+          "length": "4800",
+          "quantity": "4"
+        }
+      ]
+    },
+    {
+      "id": "1787109717114",
+      "designForce": "1350",
+      "width": "150",
+      "height": "150",
+      "thickness": "10",
+      "tubeWidth": "200",
+      "tubeThickness": "4",
+      "weld": "8",
+      "coreMaterial": "Q235B",
+      "yieldStrength": "294",
+      "template": "王（丨）",
+      "lengthQuantityTable": [
+        {
+          "length": "6800",
+          "quantity": "2"
+        }
+      ]
+    }
+  ],
+  "totalQuantity": 12,
+  "version": "1.0"
+}

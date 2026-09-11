@@ -1,0 +1,103 @@
+{
+  "projectName": "北京中医药大学良乡校区研发中心项目",
+  "parameterTables": [
+    {
+      "id": "1",
+      "designForce": "1800",
+      "width": "170",
+      "height": "170",
+      "thickness": "12",
+      "tubeWidth": "200",
+      "tubeThickness": "4",
+      "weld": "10",
+      "coreMaterial": "Q235B",
+      "template": "王一",
+      "lengthQuantityTable": [
+        {
+          "length": "4400",
+          "quantity": "96"
+        },
+        {
+          "length": "4800",
+          "quantity": "12"
+        }
+      ]
+    },
+    {
+      "id": "1782796939319",
+      "designForce": "2000",
+      "width": "150",
+      "height": "150",
+      "thickness": "16",
+      "tubeWidth": "200",
+      "tubeThickness": "4",
+      "weld": "12",
+      "coreMaterial": "Q235B",
+      "template": "王一",
+      "lengthQuantityTable": [
+        {
+          "length": "4400",
+          "quantity": "32"
+        },
+        {
+          "length": "4800",
+          "quantity": "4"
+        }
+      ]
+    },
+    {
+      "id": "1782796943455",
+      "designForce": "3500",
+      "width": "200",
+      "height": "200",
+      "thickness": "20",
+      "tubeWidth": "250",
+      "tubeThickness": "4",
+      "weld": "16",
+      "coreMaterial": "Q235B",
+      "template": "王一",
+      "lengthQuantityTable": [
+        {
+          "length": "5000",
+          "quantity": "8"
+        },
+        {
+          "length": "5400",
+          "quantity": "1"
+        }
+      ]
+    },
+    {
+      "id": "1782796949095",
+      "designForce": "4000",
+      "width": "190",
+      "height": "190",
+      "thickness": "25",
+      "tubeWidth": "250",
+      "tubeThickness": "4",
+      "weld": "20",
+      "coreMaterial": "Q235B",
+      "template": "王一",
+      "lengthQuantityTable": [
+        {
+          "length": "4100",
+          "quantity": "14"
+        },
+        {
+          "length": "4600",
+          "quantity": "2"
+        },
+        {
+          "length": "5000",
+          "quantity": "8"
+        },
+        {
+          "length": "5400",
+          "quantity": "1"
+        }
+      ]
+    }
+  ],
+  "totalQuantity": 178,
+  "version": "1.0"
+}

@@ -1,11 +1,15 @@
 import ezdxf
 import csv
-import logging
 import math
+import sys
+import os
 
-# 配置日志记录
-logging.basicConfig(filename='dxf_csv_conversion.log', level=logging.INFO,
-                    format='%(asctime)s - %(levelname)s - %(message)s')
+# 添加项目根目录到Python路径
+sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
+
+# 导入日志模块
+from app.utils.logger import function_logger as logging
+from app.utils.logger import function_alarm_logger as alarm_logging
 
 # 定义尺寸标注类型映射
 DIMTYPE_MAPPING = {
@@ -264,7 +268,6 @@ def process_dimension(entity, row):
             print(row["类型/名称"])'''
         if row["类型/名称"] == "UNKNOWN":
             logging.warning(f"发现未知尺寸类型，尺寸编码为 {dim_code}，实体句柄为 {entity.dxf.handle}")
-            print(f"发现未知尺寸类型，尺寸编码为 {dim_code}，实体句柄为 {entity.dxf.handle}")
     except AttributeError:
         logging.warning(f"DIMENSION 实体缺少必要属性，跳过此实体")
 
@@ -415,11 +418,11 @@ def process_insert(entity, row, writer):
 
 # dxf转csv主函数
 def dxf_to_csv(input_file, output_file):
-    print(f"开始转换: {input_file} -> {output_file}")
+    logging.info(f"开始转换: {input_file} -> {output_file}")
     try:
         doc = ezdxf.readfile(input_file)
         msp = doc.modelspace()
-        print(f"成功打开DXF文件，模型空间有 {len(msp)} 个实体")
+        logging.info(f"成功打开DXF文件，模型空间有 {len(msp)} 个实体")
         fieldnames = [
             '实体类型', '图层', '颜色', '线型', '线宽', '线型描述', '线型图案',
             '类型/名称', '块名', '值', '覆盖值', '位置 X', '位置 Y', '起点 X', '起点 Y', '终点 X', '终点 Y',
@@ -433,36 +436,65 @@ def dxf_to_csv(input_file, output_file):
             write_layer_info(doc, writer)
 
             for entity in msp:
-                row = {
-                    '实体类型': entity.dxftype(),
-                    '图层': entity.dxf.layer,
-                    '颜色': entity.dxf.color,
-                    '线型': entity.dxf.linetype,
-                    '线宽': entity.dxf.lineweight,
-                }
-                if entity.dxftype() == 'LINE':
-                    process_line(entity, row)
-                    writer.writerow(row)
-                elif entity.dxftype() == 'CIRCLE':
-                    process_circle(entity, row)
-                    writer.writerow(row)
-                elif entity.dxftype() == 'LWPOLYLINE':
-                    process_lwpolyline(entity, row)
-                    writer.writerow(row)
-                elif entity.dxftype() == 'DIMENSION':
-                    process_dimension(entity, row)
-                    writer.writerow(row)
-                elif entity.dxftype() == 'ARC':
-                    process_arc(entity, row)
-                    writer.writerow(row)
-                elif entity.dxftype() in ['TEXT', 'MTEXT']:
-                    process_text(entity, row)
-                    writer.writerow(row)
-                elif entity.dxftype() == 'HATCH':
-                    process_hatch(entity, row)
-                    writer.writerow(row)
-                elif entity.dxftype() == 'INSERT':
-                    process_insert(entity, row, writer)
+                try:
+                    # 尝试获取基本属性，如果失败则使用默认值
+                    try:
+                        layer = entity.dxf.layer
+                    except:
+                        layer = 'Unknown'
+                    
+                    try:
+                        color = entity.dxf.color
+                    except:
+                        color = 256
+                    
+                    try:
+                        linetype = entity.dxf.linetype
+                    except:
+                        linetype = 'BYLAYER'
+                    
+                    try:
+                        lineweight = entity.dxf.lineweight
+                    except:
+                        lineweight = -1
+                    
+                    row = {
+                        '实体类型': entity.dxftype(),
+                        '图层': layer,
+                        '颜色': color,
+                        '线型': linetype,
+                        '线宽': lineweight,
+                    }
+                    
+                    if entity.dxftype() == 'LINE':
+                        process_line(entity, row)
+                        writer.writerow(row)
+                    elif entity.dxftype() == 'CIRCLE':
+                        process_circle(entity, row)
+                        writer.writerow(row)
+                    elif entity.dxftype() == 'LWPOLYLINE':
+                        process_lwpolyline(entity, row)
+                        writer.writerow(row)
+                    elif entity.dxftype() == 'DIMENSION':
+                        process_dimension(entity, row)
+                        writer.writerow(row)
+                    elif entity.dxftype() == 'ARC':
+                        process_arc(entity, row)
+                        writer.writerow(row)
+                    elif entity.dxftype() in ['TEXT', 'MTEXT']:
+                        process_text(entity, row)
+                        writer.writerow(row)
+                    elif entity.dxftype() == 'HATCH':
+                        process_hatch(entity, row)
+                        writer.writerow(row)
+                    elif entity.dxftype() == 'INSERT':
+                        process_insert(entity, row, writer)
+                    else:
+                        # 对于不支持的实体类型，记录基本信息
+                        logging.info(f"跳过不支持的实体类型: {entity.dxftype()}")
+                except Exception as e:
+                    logging.warning(f"处理实体 {entity.dxftype()} 时发生错误: {str(e)}，跳过此实体")
+                    continue
 
             # 写入dimstyle信息
             write_dimstyle_info(doc, writer)

@@ -11,8 +11,8 @@ const VfdPeriodFrequencyCalculator: React.FC = () => {
     designDisplacement: ''
   });
 
-  // 单位切换状态 (true: 使用标准单位, false: 使用公制小单位)
-  const [useStandardUnits, setUseStandardUnits] = useState(false);
+  // 阻尼系数单位切换状态 (true: 使用 KN/(m/s)α, false: 使用 KN/(mm/s)α)
+  const [useStandardDampingUnit, setUseStandardDampingUnit] = useState(false);
 
   // 计算结果状态
   const [results, setResults] = useState<{[key: string]: string | boolean}>({});
@@ -43,7 +43,7 @@ const VfdPeriodFrequencyCalculator: React.FC = () => {
   // 执行计算
   const calculate = () => {
     const { maxForce, dampingCoefficient, dampingExponent, designDisplacement } = parameters;
-    
+
     // 验证输入
     if (!maxForce || !dampingCoefficient || !dampingExponent || !designDisplacement) {
       alert('请输入所有参数');
@@ -56,13 +56,19 @@ const VfdPeriodFrequencyCalculator: React.FC = () => {
     const exponent = parseFloat(dampingExponent);
     const disp = parseFloat(designDisplacement);
 
-    // 直接使用输入的单位进行计算
+    // 根据阻尼系数单位进行单位转换
+    // 当使用标准单位 KN/(m/s)α 时，设计位移需要从 mm 转换为 m
+    const dispForCalc = useStandardDampingUnit ? disp / 1000 : disp;
+
     // 根据黏滞阻尼器公式 F = C * v^α，求解 v
-    const velocity = Math.pow(force / coeff, 1 / exponent);
-    
+    const velocityRaw = Math.pow(force / coeff, 1 / exponent);
+
+    // 当使用标准单位时，计算出的速度是 m/s，需要转换为 mm/s 显示
+    const velocity = useStandardDampingUnit ? velocityRaw * 1000 : velocityRaw;
+
     // 计算相关周期频率参数（使用用户指定的公式）
     const PI = 3.14;
-    
+
     // 所有中间计算都使用精确的浮点值，不进行四舍五入
     const angularVelocity = velocity / disp; // W = V / d
     const period = (2 * PI) / angularVelocity; // T = 2×3.14 / W
@@ -78,7 +84,7 @@ const VfdPeriodFrequencyCalculator: React.FC = () => {
       angularVelocity: angularVelocity.toFixed(3),
       period: period.toFixed(3),
       frequency: frequency.toFixed(3),
-      useStandardUnits: useStandardUnits // 保存单位信息
+      useStandardDampingUnit: useStandardDampingUnit // 保存阻尼系数单位信息
     };
 
     setResults(newResults);
@@ -121,10 +127,10 @@ const VfdPeriodFrequencyCalculator: React.FC = () => {
       data.push([
         `记录 ${index + 1}`,
         '最大阻尼力(KN)',
-        `阻尼系数(${result.useStandardUnits ? 'KN/(m/s)α' : 'KN/(mm/s)α'})`,
+        `阻尼系数(${result.useStandardDampingUnit ? 'KN/(m/s)α' : 'KN/(mm/s)α'})`,
         '阻尼指数(α)',
-        `设计位移(${result.useStandardUnits ? 'm' : 'mm'})`,
-        `速度V(${result.useStandardUnits ? 'm/s' : 'mm/s'})`,
+        '设计位移(mm)',
+        '速度V(mm/s)',
         '角速度W(弧度/s)',
         '周期T(s)',
         '频率f(Hz)'
@@ -132,7 +138,7 @@ const VfdPeriodFrequencyCalculator: React.FC = () => {
       
       // 第2行：型号和数据
       data.push([
-        `型号: VFD-${String(result.maxForce)}-${result.useStandardUnits ? (parseFloat(String(result.designDisplacement)) * 1000).toString() : String(result.designDisplacement)}`,
+        `型号: VFD-${String(result.maxForce)}-${String(result.designDisplacement)}`,
         result.maxForce,
         result.dampingCoefficient,
         result.dampingExponent,
@@ -240,17 +246,17 @@ const VfdPeriodFrequencyCalculator: React.FC = () => {
       [
         `记录 ${recordNumber}`,
         '最大阻尼力(KN)',
-        `阻尼系数(${record.useStandardUnits ? 'KN/(m/s)α' : 'KN/(mm/s)α'})`,
+        `阻尼系数(${record.useStandardDampingUnit ? 'KN/(m/s)α' : 'KN/(mm/s)α'})`,
         '阻尼指数(α)',
-        `设计位移(${record.useStandardUnits ? 'm' : 'mm'})`,
-        `速度V(${record.useStandardUnits ? 'm/s' : 'mm/s'})`,
+        '设计位移(mm)',
+        '速度V(mm/s)',
         '角速度W(弧度/s)',
         '周期T(s)',
         '频率f(Hz)'
       ],
       // 第2行：型号和数据
       [
-        `型号: VFD-${String(record.maxForce)}-${record.useStandardUnits ? (parseFloat(String(record.designDisplacement)) * 1000).toString() : String(record.designDisplacement)}`,
+        `型号: VFD-${String(record.maxForce)}-${String(record.designDisplacement)}`,
         record.maxForce,
         record.dampingCoefficient,
         record.dampingExponent,
@@ -363,12 +369,12 @@ const VfdPeriodFrequencyCalculator: React.FC = () => {
             <div className="flex justify-between items-center mb-4">
               <h2 className="text-xl font-semibold text-gray-900">计算参数</h2>
               <div className="flex items-center space-x-2">
-                <span className="text-sm text-gray-600">单位：</span>
+                <span className="text-sm text-gray-600">阻尼系数单位：</span>
                 <button
-                  onClick={() => setUseStandardUnits(!useStandardUnits)}
+                  onClick={() => setUseStandardDampingUnit(!useStandardDampingUnit)}
                   className="px-4 py-2 bg-brb-blue-100 hover:bg-brb-blue-200 text-brb-blue-700 font-medium rounded-lg transition-all duration-300 text-sm"
                 >
-                  {useStandardUnits ? 'm' : 'mm'}
+                  {useStandardDampingUnit ? 'KN/(m/s)α' : 'KN/(mm/s)α'}
                 </button>
               </div>
             </div>
@@ -387,7 +393,7 @@ const VfdPeriodFrequencyCalculator: React.FC = () => {
               </div>
               <div className="space-y-2">
                 <label htmlFor="dampingCoefficient" className="block text-sm font-medium text-gray-700">
-                  阻尼系数 C ({useStandardUnits ? 'KN/(m/s)α' : 'KN/(mm/s)α'})
+                  阻尼系数 C ({useStandardDampingUnit ? 'KN/(m/s)α' : 'KN/(mm/s)α'})
                 </label>
                 <input
                   type="number"
@@ -414,7 +420,7 @@ const VfdPeriodFrequencyCalculator: React.FC = () => {
               </div>
               <div className="space-y-2">
                 <label htmlFor="designDisplacement" className="block text-sm font-medium text-gray-700">
-                  设计位移 d ({useStandardUnits ? 'm' : 'mm'})
+                  设计位移 d (mm)
                 </label>
                 <input
                   type="number"
@@ -455,7 +461,7 @@ const VfdPeriodFrequencyCalculator: React.FC = () => {
                 <div className="text-lg text-gray-600">速度 V</div>
                 <div className="flex items-center space-x-2">
                   <div className="text-2xl font-bold text-blue-600">{results.velocity || '---'}</div>
-                  <div className="text-sm text-gray-500">{useStandardUnits ? 'm/s' : 'mm/s'}</div>
+                  <div className="text-sm text-gray-500">mm/s</div>
                 </div>
               </div>
               <div className="bg-blue-50 p-5 rounded-lg flex items-center justify-between min-h-[74px]">
@@ -534,7 +540,7 @@ const VfdPeriodFrequencyCalculator: React.FC = () => {
                           <div className="flex items-center">
                             <span className="text-sm font-medium text-blue-800 mr-2">型号:</span>
                             <span className="text-sm font-semibold text-blue-900">
-                                VFD-{String(record.maxForce)}-{record.useStandardUnits ? (parseFloat(String(record.designDisplacement)) * 1000).toString() : String(record.designDisplacement)}
+                                VFD-{String(record.maxForce)}-{String(record.designDisplacement)}
                               </span>
                           </div>
                         </div>
@@ -581,7 +587,7 @@ const VfdPeriodFrequencyCalculator: React.FC = () => {
                               <span className="text-sm text-gray-600 flex-1">阻尼系数 C:</span>
                               <div className="flex items-center justify-end flex-1">
                                 <span className="text-sm font-medium text-gray-900 flex-1 text-center">{record.dampingCoefficient}</span>
-                                <span className="text-sm text-gray-500 flex-1 text-right">({record.useStandardUnits ? 'KN/(m/s)α' : 'KN/(mm/s)α'})</span>
+                                <span className="text-sm text-gray-500 flex-1 text-right">({record.useStandardDampingUnit ? 'KN/(m/s)α' : 'KN/(mm/s)α'})</span>
                               </div>
                             </div>
                             <div className="flex items-center px-3 py-2">
@@ -595,7 +601,7 @@ const VfdPeriodFrequencyCalculator: React.FC = () => {
                               <span className="text-sm text-gray-600 flex-1">设计位移 d:</span>
                               <div className="flex items-center justify-end flex-1">
                                 <span className="text-sm font-medium text-gray-900 flex-1 text-center">{record.designDisplacement}</span>
-                                <span className="text-sm text-gray-500 flex-1 text-right">({record.useStandardUnits ? 'm' : 'mm'})</span>
+                                <span className="text-sm text-gray-500 flex-1 text-right">(mm)</span>
                               </div>
                             </div>
                           </div>
@@ -613,7 +619,7 @@ const VfdPeriodFrequencyCalculator: React.FC = () => {
                               <span className="text-sm text-gray-600 flex-1">速度 V:</span>
                               <div className="flex items-center justify-end flex-1">
                                 <span className="text-sm font-medium text-gray-900 flex-1 text-center">{record.velocity}</span>
-                                <span className="text-sm text-gray-500 flex-1 text-right">({record.useStandardUnits ? 'm/s' : 'mm/s'})</span>
+                                <span className="text-sm text-gray-500 flex-1 text-right">(mm/s)</span>
                               </div>
                             </div>
                             <div className="flex items-center px-3 py-2">

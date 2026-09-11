@@ -76,16 +76,27 @@ Start-Process cmd.exe -ArgumentList "/k", $frontendCmd
 
 Write-Host ""
 Write-Host "========================================"
+Write-Host "    Starting Local File Opener (Port: 17890)"
+Write-Host "========================================"
+
+# Start local file opener in new window
+$openerCmd = "cd /d `"$PSScriptRoot`" && python client\sync_client.py --service"
+Start-Process cmd.exe -ArgumentList "/k", $openerCmd
+
+Write-Host ""
+Write-Host "========================================"
 Write-Host "    Servers Started Successfully"
 Write-Host ""
 Write-Host "Frontend Server: http://localhost:3000"
 Write-Host "Backend Server: http://localhost:8000"
+Write-Host "Local File Opener: http://127.0.0.1:17890"
 Write-Host "Remote Access: http://$env:COMPUTERNAME:3000 or http://[Your IP Address]:3000"
 Write-Host ""
 Write-Host "Notes:"
-Write-Host "1. Please ensure both server windows are running properly"
+Write-Host "1. Please ensure all server windows are running properly"
 Write-Host "2. Closing this window won't affect the servers"
 Write-Host "3. To stop servers, press Ctrl+C in their respective windows"
+Write-Host "4. The local file opener must keep running to open files with local software"
 Write-Host "========================================"
 
 # Open browser

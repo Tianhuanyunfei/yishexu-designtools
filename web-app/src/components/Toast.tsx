@@ -7,7 +7,7 @@ interface ToastProps {
   duration?: number;
 }
 
-const Toast: React.FC<ToastProps> = ({ message, type = 'info', onClose, duration = 3000 }) => {
+export const Toast: React.FC<ToastProps> = ({ message, type = 'info', onClose, duration = 3000 }) => {
   useEffect(() => {
     const timer = setTimeout(() => {
       onClose();
@@ -29,16 +29,16 @@ const Toast: React.FC<ToastProps> = ({ message, type = 'info', onClose, duration
   };
 
   return (
-    <div className="fixed top-4 right-4 z-50">
-      <div className={`${getTypeStyles()} rounded-lg shadow-lg p-4 flex items-center max-w-md`}>
+    <div className="fixed bottom-4 left-1/2 transform -translate-x-1/2 z-50">
+      <div className={`${getTypeStyles()} rounded-lg shadow-lg p-2 flex items-center max-w-md`}>
         <div className="flex-grow">
-          <p className="text-sm font-medium">{message}</p>
+          <p className="text-xs font-medium whitespace-pre-line">{message}</p>
         </div>
         <button
           onClick={onClose}
-          className="ml-4 text-white hover:opacity-80 focus:outline-none"
+          className="ml-2 text-white hover:opacity-80 focus:outline-none"
         >
-          <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
           </svg>
         </button>

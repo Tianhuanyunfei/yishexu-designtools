@@ -1,0 +1,49 @@
+{
+  "projectName": "河南大学龙子湖项目2",
+  "parameterTables": [
+    {
+      "id": "1",
+      "designForce": "4400",
+      "width": "200",
+      "height": "200",
+      "thickness": "25",
+      "tubeWidth": "250",
+      "tubeThickness": "4",
+      "weld": "18",
+      "coreMaterial": "Q235B",
+      "yieldStrength": "294",
+      "template": "王（丨）",
+      "lengthQuantityTable": [
+        {
+          "length": "3600",
+          "quantity": "32"
+        },
+        {
+          "length": "3400",
+          "quantity": "16"
+        }
+      ]
+    },
+    {
+      "id": "1787534022061",
+      "designForce": "3550",
+      "width": "200",
+      "height": "200",
+      "thickness": "20",
+      "tubeWidth": "250",
+      "tubeThickness": "4",
+      "weld": "13",
+      "coreMaterial": "Q235B",
+      "yieldStrength": "294",
+      "template": "王（丨）",
+      "lengthQuantityTable": [
+        {
+          "length": "3400",
+          "quantity": "8"
+        }
+      ]
+    }
+  ],
+  "totalQuantity": 56,
+  "version": "1.0"
+}

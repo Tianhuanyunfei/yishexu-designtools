@@ -4,9 +4,14 @@ from openpyxl.styles import Font, Alignment, Border, Side, PatternFill
 import os
 from datetime import datetime
 
+# 导入日志模块
+from app.utils.logger import function_logger as logging
+from app.utils.logger import function_alarm_logger as alarm_logging
+
 
 def generate_materials_excel(project_name, param_tables, project_folder=None, save_path=None):
- 
+    logging.info(f"开始生成 {project_name} 项目的材料单")
+    
     # 创建一个新的Excel工作簿
     wb = openpyxl.Workbook()
     ws = wb.active
@@ -88,7 +93,7 @@ def generate_materials_excel(project_name, param_tables, project_folder=None, sa
     start_row = 3 # 初始值为3，从第3行开始填充数据
     # 统计材料规格，初始化
         # 板厚列表和材料列表
-    think_list = [("Q235",6)] # 板厚列表，初始值为6mm,（方板厚度），默认材料为Q235
+    think_list = [("Q235B",6)] # 板厚列表，初始值为6mm,（方板厚度），默认材料为Q235B
         # 方管宽度和厚度列表
     pipe_width_think_list = []
 
@@ -96,7 +101,7 @@ def generate_materials_excel(project_name, param_tables, project_folder=None, sa
     # 填写参数表
     for table in param_tables: # 遍历每个参数表
         think = int(table.get('params', {}).get('板材厚度(mm)', ''))
-        core_material = table.get('core_material', 'Q235')
+        core_material = table.get('core_material', 'Q235B')
         print(core_material)
         width = int(table.get('params', {}).get('截面宽度(mm)', ''))
         height = int(table.get('params', {}).get('截面高度(mm)', ''))
@@ -165,7 +170,7 @@ def generate_materials_excel(project_name, param_tables, project_folder=None, sa
 
 
             # 根据截面类型，填充相关参数，并更改插入位置
-            if template_type == '十一':
+            if template_type in ('十一', '十'):
                 num_rows = 8 # 表格总行数
 
                 # 设置单元格样式
@@ -244,7 +249,7 @@ def generate_materials_excel(project_name, param_tables, project_folder=None, sa
 
                 # 备注
                 for row in range(start_row, start_row+3):
-                    ws.cell(row=row, column=11, value=f"{core_material}" if ws.cell(row=row, column=4 ).value != "挡板" else "Q235") # 材料
+                    ws.cell(row=row, column=11, value=f"{core_material}" if ws.cell(row=row, column=4 ).value != "挡板" else "Q235B") # 材料
                 ws.merge_cells(f'K{start_row+4}:K{start_row+6}') # 合并单元格
                 ws.cell(row=start_row+4, column=11, value=f"十字") # 截面
                 
@@ -307,7 +312,7 @@ def generate_materials_excel(project_name, param_tables, project_folder=None, sa
 
                 # 填充长度
                 ws.cell(row=start_row, column=7, value=f"=C{start_row}") # 芯板长度
-                ws.cell(row=start_row+1, column=7, value=f"300" if template_type =='王一' else f"=C{start_row}") # 翼缘板1长度
+                ws.cell(row=start_row+1, column=7, value=f"300" if template_type in ('王一', '王（丨）') else f"=C{start_row}") # 翼缘板1长度
                 ws.cell(row=start_row+2, column=7, value=f"300") # 翼缘板2长度
                 ws.cell(row=start_row+3, column=7, value=f"=f{start_row+3}") # 挡板长度
                 ws.cell(row=start_row+4, column=7, value=f"=C{start_row}-300") # 方管长度
@@ -315,7 +320,7 @@ def generate_materials_excel(project_name, param_tables, project_folder=None, sa
                 
                 #填充数量
                 ws.cell(row=start_row, column=8, value=quantity) #芯板数量
-                ws.cell(row=start_row+1, column=8, value=quantity*4 if template_type =='王一' else quantity*2) #翼缘板1数量
+                ws.cell(row=start_row+1, column=8, value=quantity*4 if template_type in ('王一', '王（丨）') else quantity*2) #翼缘板1数量
                 ws.cell(row=start_row+2, column=8, value=(quantity*4)) #翼缘板2数量
                 ws.cell(row=start_row+3, column=8, value=quantity*2) #挡板数量
                 ws.cell(row=start_row+4, column=8, value=quantity*1) #方管数量
@@ -338,7 +343,7 @@ def generate_materials_excel(project_name, param_tables, project_folder=None, sa
 
                 # 备注
                 for row in range(start_row, start_row+4):
-                    ws.cell(row=row, column=11, value=f"{core_material}" if ws.cell(row=row, column=4 ).value != "挡板" else "Q235") # 材料
+                    ws.cell(row=row, column=11, value=f"{core_material}" if ws.cell(row=row, column=4 ).value != "挡板" else "Q235B") # 材料
                 ws.merge_cells(f'K{start_row+5}:K{start_row+7}') # 合并单元格
                 ws.cell(row=start_row+5, column=11, value=f"王字") # 截面
 
@@ -466,6 +471,7 @@ def generate_materials_excel(project_name, param_tables, project_folder=None, sa
     if save_path:
         # 如果提供了保存路径，直接保存到该路径
         wb.save(save_path)
+        logging.info(f"材料单已成功保存到: {save_path}")
         return save_path
     else:
         # 否则，将文件保存到内存中
@@ -473,6 +479,7 @@ def generate_materials_excel(project_name, param_tables, project_folder=None, sa
         output = io.BytesIO()
         wb.save(output)
         output.seek(0)
+        logging.info(f"材料单已成功生成并返回内存流")
         return output
 
 
@@ -483,9 +490,9 @@ if __name__ == "__main__":
     test_param_tables = [
         {
             "table_number": 1,
-            "template_type": "王一",
+            "template_type": "王（丨）",
             "design_force": "2300",
-            "core_material": "Q235",
+            "core_material": "Q235B",
             "params": 
             {
                 "截面宽度(mm)": 170,
@@ -504,7 +511,7 @@ if __name__ == "__main__":
             "table_number": 2,
             "design_force": "3000",
             "core_material": "Y160",
-            "template_type": "十一",
+            "template_type": "十",
             "params": {
                 "截面宽度(mm)": 180,
                 "截面高度(mm)": 180,
@@ -520,8 +527,8 @@ if __name__ == "__main__":
         {
             "table_number": 3,
             "design_force": "4000",
-            "core_material": "Q235",
-            "template_type": "王工",
+            "core_material": "Q235B",
+            "template_type": "王（工）",
             "params": {
                 "截面宽度(mm)": 200,
                 "截面高度(mm)": 200,

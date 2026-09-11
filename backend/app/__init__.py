@@ -16,6 +16,9 @@ from config.config import config
 # 导入路由
 from app.routes.routes import register_routes
 
+# 导入日志模块
+from app.utils.logger import app_logger
+
 # 创建Flask应用
 def create_app(config_name=None):
     # 如果没有指定配置名称，使用环境变量中的配置或默认配置
@@ -36,5 +39,8 @@ def create_app(config_name=None):
     
     # 注册路由
     register_routes(app)
+    
+    # 记录应用启动信息
+    app_logger.info(f"应用启动成功，配置: {config_name}, 主机: {app.config.get('HOST')}, 端口: {app.config.get('PORT')}")
     
     return app

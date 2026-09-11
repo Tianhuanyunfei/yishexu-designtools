@@ -1,77 +1,64 @@
-import React, { useEffect } from 'react';
+import React, { type ReactElement } from 'react';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import Layout from './components/Layout';
+import ProtectedRoute from './components/ProtectedRoute';
+import { useApplySavedBackgroundColor } from './hooks/useApplySavedBackgroundColor';
 import Dashboard from './pages/Dashboard';
-import BrbDesigner from './pages/BrbDesigner';
 import BrbDrawing from './pages/BrbDrawing';
 import BrbStabilityChecker from './pages/BrbStabilityChecker';
+import BrbConnectorDrawing from './pages/BrbConnectorDrawing';
 import VfdDesigner from './pages/VfdDesigner';
 import VfdPeriodFrequencyCalculator from './pages/VfdPeriodFrequencyCalculator';
 import DxfToCsvConverter from './pages/DxfToCsvConverter';
 import CsvToDxfConverter from './pages/CsvToDxfConverter';
 import CsvEditor from './pages/CsvEditor';
+import TestFiles from './pages/TestFiles';
+import ExcelEditor from './pages/ExcelEditor';
+import ExcelDataEditor from './pages/ExcelDataEditor';
+import WordEditor from './pages/WordEditor';
 import Settings from './pages/Settings';
+import Login from './pages/Login';
+import Register from './pages/Register';
+import { AuthProvider } from './context/AuthContext';
 import './index.css';
 
+function withProtectedLayout(page: ReactElement) {
+  return (
+    <ProtectedRoute>
+      <Layout>{page}</Layout>
+    </ProtectedRoute>
+  );
+}
+
 function App() {
-  // 在应用加载时应用保存的背景色
-  useEffect(() => {
-    const savedColor = localStorage.getItem('backgroundColor');
-    if (savedColor) {
-      // 应用到body元素
-      document.body.style.backgroundColor = savedColor;
-      
-      // 应用到所有带有min-h-screen类的div元素（包括Layout和Dashboard组件中的）
-      const minHeightDivs = document.querySelectorAll('.min-h-screen');
-      minHeightDivs.forEach((div) => {
-        div.classList.remove('bg-gray-50');
-        (div as HTMLElement).style.backgroundColor = savedColor;
-      });
-      
-      // 应用到main元素
-      const mainElement = document.querySelector('main');
-      if (mainElement) {
-        (mainElement as HTMLElement).style.backgroundColor = savedColor;
-      }
-      
-      // 应用到main内的div容器
-      const mainDiv = document.querySelector('main > div');
-      if (mainDiv) {
-        (mainDiv as HTMLElement).style.backgroundColor = savedColor;
-      }
-      
-      // 应用到所有卡片元素
-      const cards = document.querySelectorAll('.card');
-      cards.forEach((card) => {
-        card.classList.remove('bg-white');
-        (card as HTMLElement).style.backgroundColor = '#ffffff'; // 保持卡片为白色，以便与背景形成对比
-      });
-      
-      // 应用到Dashboard组件中的内容容器
-      const dashboardContainers = document.querySelectorAll('.max-w-7xl.mx-auto');
-      dashboardContainers.forEach((container) => {
-        (container as HTMLElement).style.backgroundColor = savedColor;
-      });
-    }
-  }, []);
+  useApplySavedBackgroundColor();
 
   return (
-    <Router future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
-      <Layout>
+    <AuthProvider>
+      <Router future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
         <Routes>
-          <Route path="/" element={<Dashboard />} />
-          <Route path="/brb-designer" element={<BrbDesigner />} />
-          <Route path="/brb-drawing" element={<BrbDrawing />} />
-          <Route path="/brb-stability" element={<BrbStabilityChecker />} />
-          <Route path="/vfd-designer" element={<VfdDesigner />} />
-          <Route path="/vfd-period-frequency" element={<VfdPeriodFrequencyCalculator />} />
-          <Route path="/dxf-to-csv" element={<DxfToCsvConverter />} />
-          <Route path="/csv-to-dxf" element={<CsvToDxfConverter />} />
-          <Route path="/csv-editor" element={<CsvEditor />} />
-          <Route path="/settings" element={<Settings />} />
+          {/* 无需Layout的公共路由 */}
+          <Route path="/login" element={<Login />} />
+          <Route path="/register" element={<Register />} />
+
+          {/* 需要 Layout 与登录校验的受保护路由 */}
+          <Route path="/" element={withProtectedLayout(<Dashboard />)} />
+          <Route path="/brb-drawing" element={withProtectedLayout(<BrbDrawing />)} />
+          <Route path="/brb-connector-drawing" element={withProtectedLayout(<BrbConnectorDrawing />)} />
+          <Route path="/brb-stability" element={withProtectedLayout(<BrbStabilityChecker />)} />
+          <Route path="/vfd-designer" element={withProtectedLayout(<VfdDesigner />)} />
+          <Route path="/vfd-period-frequency" element={withProtectedLayout(<VfdPeriodFrequencyCalculator />)} />
+          <Route path="/test-files" element={withProtectedLayout(<TestFiles />)} />
+          <Route path="/dxf-to-csv" element={withProtectedLayout(<DxfToCsvConverter />)} />
+          <Route path="/csv-to-dxf" element={withProtectedLayout(<CsvToDxfConverter />)} />
+          <Route path="/csv-editor" element={withProtectedLayout(<CsvEditor />)} />
+          <Route path="/excel-editor" element={withProtectedLayout(<ExcelEditor />)} />
+          <Route path="/excel-data-editor" element={withProtectedLayout(<ExcelDataEditor />)} />
+          <Route path="/word-editor" element={withProtectedLayout(<WordEditor />)} />
+          <Route path="/settings" element={withProtectedLayout(<Settings />)} />
         </Routes>
-      </Layout>
-    </Router>
+      </Router>
+    </AuthProvider>
   );
 }
 

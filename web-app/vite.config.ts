@@ -19,11 +19,15 @@ export default defineConfig({
     '__APP_VERSION__': JSON.stringify(version),
   },
   server: {
+    host: '0.0.0.0',
     port: 3000,
     proxy: {
       '/api': {
         target: 'http://localhost:8000',
         changeOrigin: true,
+        // 方管排布 deep 搜索可能数分钟，避免开发代理先断开
+        timeout: 5 * 60 * 1000,
+        proxyTimeout: 5 * 60 * 1000,
       },
     },
   },

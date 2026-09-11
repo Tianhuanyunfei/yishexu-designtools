@@ -1,6 +1,13 @@
-import React, { useState, useEffect } from 'react';
-import { Box, FolderOpen, Download, Plus, Trash2 } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { Box, FolderOpen, Download, Plus, Trash2, FileSpreadsheet, Copy } from 'lucide-react';
 import { useToast } from '../components/Toast';
+import WangSectionParams from '../components/WangSectionParams';
+import {
+  SECTION_TEMPLATE_OPTIONS,
+  normalizeSectionTemplate,
+  isShiSectionTemplate,
+  usesWangSectionDiagram,
+} from '../utils/sectionTemplate';
 
 interface ParameterTable {
   id: string;
@@ -12,6 +19,7 @@ interface ParameterTable {
   tubeThickness: string;
   weld: string;
   coreMaterial: string;
+  yieldStrength: string; // 屈服强度 MPa，默认 294
   template: string; // 新增：选择的截面模板
   lengthQuantityTable: Array<{ length: string; quantity: string }>;
 }
@@ -35,6 +43,48 @@ const formatNumber = (num: number | string): string => {
   return String(num);
 };
 
+const getBaseName = (filePath: string): string => {
+  const parts = filePath.split(/[\\/]/);
+  return parts[parts.length - 1] || filePath;
+};
+
+/** 方管排布：大项目 deep 搜索可能需数分钟，结果优先于速度 */
+const TUBE_LAYOUT_FETCH_TIMEOUT_MS = 5 * 60 * 1000;
+
+function getTubeLayoutProgressHint(elapsedSec: number): string {
+  if (elapsedSec < 15) return '正在生成方管排布图…';
+  if (elapsedSec < 45) return '并联算法竞选中（含深度搜索），计时增加表示仍在计算…';
+  if (elapsedSec < 120) return '深度搜索耗时较长属正常，请稍候…';
+  return '仍在计算最优方案，请勿关闭页面…';
+}
+
+const PARAM_CARD_STEP_PX = 320 + 24; // w-80 + gap-6
+
+/** 芯板材料 LYXXX → 强度 XXX；匹配不到返回 null */
+function yieldStrengthFromCoreMaterial(material: string): string | null {
+  const m = material.trim().match(/^LY(\d+)/i);
+  return m ? m[1] : null;
+}
+
+/**
+ * 拖拽预览：按「抽出 from、插入到 to」后的视觉位置，计算各表应平移的距离。
+ * 效果：落点后的表后移腾空，中间表补上原位空缺。
+ */
+function getDragLayoutShift(
+  index: number,
+  from: number | null,
+  to: number | null,
+): number {
+  if (from === null || to === null) return 0;
+  if (to === from || to === from + 1) return 0;
+  if (index === from) return 0;
+
+  const insertAt = to > from ? to - 1 : to;
+  const compact = index > from ? index - 1 : index;
+  const visual = compact >= insertAt ? compact + 1 : compact;
+  return (visual - index) * PARAM_CARD_STEP_PX;
+}
+
 const BrbDrawing: React.FC = () => {
   // 从localStorage加载初始状态
   const loadInitialState = () => {
@@ -43,9 +93,9 @@ const BrbDrawing: React.FC = () => {
       const savedTotalQuantity = parseInt(localStorage.getItem('brb_drawing_totalQuantity') || '0', 10);
       const savedParameterTables = localStorage.getItem('brb_drawing_parameterTables');
       
-      const initialParameterTables = savedParameterTables ? 
-        JSON.parse(savedParameterTables) as ParameterTable[] :
-        [{
+      const initialParameterTables = (savedParameterTables
+        ? (JSON.parse(savedParameterTables) as ParameterTable[])
+        : [{
           id: '1',
           designForce: '',
           width: '',
@@ -55,9 +105,16 @@ const BrbDrawing: React.FC = () => {
           tubeThickness: '',
           weld: '',
           coreMaterial: 'Q235B',
-          template: '王一',
+          yieldStrength: '294',
+          template: '王（丨）',
           lengthQuantityTable: [{ length: '', quantity: '' }]
-        }];
+        }]
+      ).map((table) => ({
+        ...table,
+        template: normalizeSectionTemplate(table.template),
+        yieldStrength: table.yieldStrength || '294',
+        coreMaterial: table.coreMaterial || 'Q235B',
+      }));
       
       return {
         projectName: savedProjectName,
@@ -79,7 +136,8 @@ const BrbDrawing: React.FC = () => {
           tubeThickness: '',
           weld: '',
           coreMaterial: 'Q235B',
-          template: '王一',
+          yieldStrength: '294',
+          template: '王（丨）',
           lengthQuantityTable: [{ length: '', quantity: '' }]
         }]
       };
@@ -108,21 +166,67 @@ const BrbDrawing: React.FC = () => {
   useEffect(() => {
     localStorage.setItem('brb_drawing_parameterTables', JSON.stringify(parameterTables));
   }, [parameterTables]);
+  useEffect(() => {
+    return () => {
+      if (removeTableTimerRef.current) {
+        clearTimeout(removeTableTimerRef.current);
+      }
+      if (enterTableTimerRef.current) {
+        clearTimeout(enterTableTimerRef.current);
+      }
+    };
+  }, []);
   const [dragFromIndex, setDragFromIndex] = useState<number | null>(null);
   const [dragToIndex, setDragToIndex] = useState<number | null>(null);
+  const [justMovedTableId, setJustMovedTableId] = useState<string | null>(null);
+  const justMovedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [removingTableId, setRemovingTableId] = useState<string | null>(null);
+  const [enteringTableId, setEnteringTableId] = useState<string | null>(null);
+  const [enterReady, setEnterReady] = useState(false);
+  const removeTableTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const enterTableTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // 添加加载状态
   const [isGeneratingDrawings, setIsGeneratingDrawings] = useState(false);
   const [isGeneratingMaterials, setIsGeneratingMaterials] = useState(false);
   const [isGeneratingTubeLayout, setIsGeneratingTubeLayout] = useState(false);
+  const [tubeLayoutElapsedSec, setTubeLayoutElapsedSec] = useState(0);
+  const [tubeLayoutStatus, setTubeLayoutStatus] = useState('');
+  const [isParsingTaskbook, setIsParsingTaskbook] = useState(false);
+  const [isTaskbookDragOver, setIsTaskbookDragOver] = useState(false);
+  const taskbookInputRef = useRef<HTMLInputElement>(null);
+
+  const isExcelTaskbookFile = (file: File | undefined | null) => {
+    if (!file) return false;
+    const name = file.name.toLowerCase();
+    return name.endsWith('.xlsx') || name.endsWith('.xlsm');
+  };
+
+  const pickTaskbookFromDataTransfer = (dt: DataTransfer | null): File | null => {
+    if (!dt?.files?.length) return null;
+    for (let i = 0; i < dt.files.length; i++) {
+      const f = dt.files[i];
+      if (isExcelTaskbookFile(f)) return f;
+    }
+    return null;
+  };
 
 
 
 
 
   const updateParameterTable = (id: string, field: keyof ParameterTable, value: any) => {
-    setParameterTables(parameterTables.map(table => 
-      table.id === id ? { ...table, [field]: value } : table
-    ));
+    setParameterTables(parameterTables.map(table => {
+      if (table.id !== id) return table;
+      if (field === 'coreMaterial') {
+        const autoStrength = yieldStrengthFromCoreMaterial(String(value ?? ''));
+        return {
+          ...table,
+          coreMaterial: value,
+          ...(autoStrength ? { yieldStrength: autoStrength } : {}),
+        };
+      }
+      return { ...table, [field]: value };
+    }));
   };
 
   const addLengthQuantityRow = (tableId: string) => {
@@ -188,7 +292,8 @@ const BrbDrawing: React.FC = () => {
       tubeThickness: '',
       weld: '',
       coreMaterial: 'Q235B',
-      template: '王一',
+      yieldStrength: '294',
+      template: '王（丨）',
       lengthQuantityTable: [{ length: '', quantity: '' }]
     };
     // 使用函数式更新，确保使用最新的状态
@@ -209,62 +314,139 @@ const BrbDrawing: React.FC = () => {
     });
   };
 
+  const animateTableEnter = (tableId: string) => {
+    setEnterReady(false);
+    setEnteringTableId(tableId);
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        setEnterReady(true);
+      });
+    });
+    if (enterTableTimerRef.current) {
+      clearTimeout(enterTableTimerRef.current);
+    }
+    enterTableTimerRef.current = setTimeout(() => {
+      setEnteringTableId(null);
+      setEnterReady(false);
+      enterTableTimerRef.current = null;
+    }, 320);
+  };
+
+  const duplicateParameterTable = (id: string) => {
+    if (removingTableId || enteringTableId) return;
+
+    const newId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    setParameterTables(prevTables => {
+      const index = prevTables.findIndex(table => table.id === id);
+      if (index < 0) return prevTables;
+
+      const source = prevTables[index];
+      const copied: ParameterTable = {
+        ...source,
+        id: newId,
+        lengthQuantityTable: source.lengthQuantityTable.map(row => ({
+          length: row.length,
+          quantity: row.quantity,
+        })),
+      };
+
+      const updatedTables = [
+        ...prevTables.slice(0, index + 1),
+        copied,
+        ...prevTables.slice(index + 1),
+      ];
+
+      let newTotalQuantity = 0;
+      updatedTables.forEach(table => {
+        table.lengthQuantityTable.forEach(row => {
+          newTotalQuantity += parseInt(row.quantity) || 0;
+        });
+      });
+      setTotalQuantity(newTotalQuantity);
+
+      return updatedTables;
+    });
+
+    animateTableEnter(newId);
+  };
+
   const removeParameterTable = (id: string) => {
-    if (parameterTables.length > 1) {
-      // 使用函数式更新，确保使用最新的状态
+    if (parameterTables.length <= 1 || removingTableId || enteringTableId) return;
+
+    setRemovingTableId(id);
+    if (removeTableTimerRef.current) {
+      clearTimeout(removeTableTimerRef.current);
+    }
+    removeTableTimerRef.current = setTimeout(() => {
       setParameterTables(prevTables => {
         const updatedTables = prevTables.filter(table => table.id !== id);
-        
-        // 在更新参数表后，立即计算并更新总数量
+
         let newTotalQuantity = 0;
         updatedTables.forEach(table => {
           table.lengthQuantityTable.forEach(row => {
-            const quantity = parseInt(row.quantity) || 0;
-            newTotalQuantity += quantity;
+            newTotalQuantity += parseInt(row.quantity) || 0;
           });
         });
         setTotalQuantity(newTotalQuantity);
-        
-        return updatedTables;
+
+        return updatedTables.length > 0
+          ? updatedTables
+          : prevTables;
       });
+      setRemovingTableId(null);
+      removeTableTimerRef.current = null;
+    }, 320);
+  };
+
+  const dragPreviewRef = useRef<HTMLElement | null>(null);
+
+  const highlightMovedTable = (tableId: string) => {
+    if (justMovedTimerRef.current) {
+      clearTimeout(justMovedTimerRef.current);
     }
+    setJustMovedTableId(tableId);
+    justMovedTimerRef.current = setTimeout(() => {
+      setJustMovedTableId(null);
+      justMovedTimerRef.current = null;
+    }, 700);
   };
 
   // 拖拽事件处理函数
   const handleDragStart = (e: React.DragEvent, index: number) => {
     e.dataTransfer.setData('text/plain', index.toString());
+    e.dataTransfer.effectAllowed = 'move';
     setDragFromIndex(index);
-    setDragToIndex(null);
+    setDragToIndex(index);
     
     // 设置自定义拖拽预览，显示整个参数表
     const dragElement = e.currentTarget.closest('.card');
     if (dragElement) {
-      // 创建一个克隆元素作为拖拽预览
       const clone = dragElement.cloneNode(true) as HTMLElement;
-      // 设置克隆元素的样式
       clone.style.position = 'absolute';
       clone.style.top = '-10000px';
       clone.style.left = '-10000px';
-      clone.style.opacity = '0.8';
-      clone.style.width = '320px'; // 确保宽度与原卡片一致
-      // 添加到DOM
+      clone.style.opacity = '0.92';
+      clone.style.width = '320px';
+      clone.style.boxShadow = '0 16px 40px rgba(37, 99, 235, 0.35)';
+      clone.style.pointerEvents = 'none';
       document.body.appendChild(clone);
-      // 设置拖拽预览
-      e.dataTransfer.setDragImage(clone, 10, 10);
-      // 在拖拽结束后移除克隆元素
-      setTimeout(() => {
-        document.body.removeChild(clone);
-      }, 0);
+      dragPreviewRef.current = clone;
+      e.dataTransfer.setDragImage(clone, 40, 24);
     }
   };
 
-  const handleDragEnd = (e: React.DragEvent) => {
+  const handleDragEnd = () => {
     setDragFromIndex(null);
     setDragToIndex(null);
+    if (dragPreviewRef.current) {
+      dragPreviewRef.current.remove();
+      dragPreviewRef.current = null;
+    }
   };
 
   const handleDragOver = (e: React.DragEvent, index: number) => {
     e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
     const rect = e.currentTarget.getBoundingClientRect();
     const x = e.clientX - rect.left;
     const insertIndex = x < rect.width / 2 ? index : index + 1;
@@ -272,42 +454,58 @@ const BrbDrawing: React.FC = () => {
   };
 
   const handleDragLeave = (e: React.DragEvent) => {
-    const container = document.querySelector('.flex.space-x-6.min-w-max');
+    const container = document.querySelector('[data-param-tables]');
     if (container && !container.contains(e.relatedTarget as Node)) {
       setDragToIndex(null);
     }
+  };
+
+  const applyTableReorder = (fromIndex: number, toIndex: number | null, fallbackIndex: number) => {
+    let insertIndex = toIndex;
+    if (insertIndex === null) {
+      insertIndex = fallbackIndex;
+    }
+
+    let finalToIndex = insertIndex;
+    if (fromIndex < finalToIndex) {
+      finalToIndex -= 1;
+    }
+
+    finalToIndex = Math.max(0, Math.min(finalToIndex, parameterTables.length - 1));
+
+    if (Number.isNaN(fromIndex) || fromIndex < 0 || fromIndex === finalToIndex) {
+      return;
+    }
+
+    const newTables = [...parameterTables];
+    const [movedTable] = newTables.splice(fromIndex, 1);
+    newTables.splice(finalToIndex, 0, movedTable);
+    setParameterTables(newTables);
+    setDragFromIndex(null);
+    setDragToIndex(null);
+    highlightMovedTable(movedTable.id);
   };
 
   const handleDrop = (e: React.DragEvent, index: number) => {
     e.preventDefault();
     const fromIndex = parseInt(e.dataTransfer.getData('text/plain'), 10);
     let toIndex = dragToIndex;
-    
+
     // 计算正确的插入位置
     if (toIndex === null) {
       const rect = e.currentTarget.getBoundingClientRect();
       const x = e.clientX - rect.left;
       toIndex = x < rect.width / 2 ? index : index + 1;
     }
-    
-    // 调整位置逻辑：如果从前面的位置拖拽到后面的位置，需要减去1
-    let finalToIndex = toIndex;
-    if (fromIndex < finalToIndex) {
-      finalToIndex -= 1;
-    }
-    
-    // 确保位置在有效范围内
-    finalToIndex = Math.max(0, Math.min(finalToIndex, parameterTables.length));
-    
-    if (fromIndex !== finalToIndex) {
-      const newTables = [...parameterTables];
-      const [movedTable] = newTables.splice(fromIndex, 1);
-      newTables.splice(finalToIndex, 0, movedTable);
-      setParameterTables(newTables);
-    }
-    setDragFromIndex(null);
-    setDragToIndex(null);
+
+    applyTableReorder(fromIndex, toIndex, index);
   };
+
+  const renderInsertIndicator = () => (
+    <div className="relative w-0 shrink-0 self-stretch" aria-hidden>
+      <div className="pointer-events-none absolute inset-y-0 left-0 z-20 w-1 -translate-x-1/2 rounded-full bg-brb-blue-500 shadow-[0_0_12px_rgba(37,99,235,0.75)]" />
+    </div>
+  );
 
   const updateLengthQuantityRow = (tableId: string, index: number, field: 'length' | 'quantity', value: string) => {
     // 使用函数式更新，确保使用最新的状态
@@ -442,13 +640,27 @@ const BrbDrawing: React.FC = () => {
             console.log('生成的文件:', result.result);
             
             // 将生成的文件添加到下载列表
-            const newFiles: GeneratedFile[] = result.result.map((fileName: string, index: number) => ({
-              id: Date.now().toString() + Math.random().toString(36).substring(2, 9) + index,
-              name: fileName,
-              path: `drawing_${Date.now()}_${index}.dxf`, // 生成一个虚拟路径用于下载标识
-              type: 'drawing',
-              tableIndex: index // 记录该文件对应的参数表索引
-            }));
+            const newFiles: GeneratedFile[] = result.result.map((item: any, index: number) => {
+              const now = Date.now();
+              if (item && typeof item === 'object' && item.path) {
+                return {
+                  id: now.toString() + Math.random().toString(36).substring(2, 9) + index,
+                  name: item.name || getBaseName(item.path),
+                  path: item.path,
+                  type: 'drawing',
+                  tableIndex: index
+                };
+              }
+
+              const rawValue = typeof item === 'string' ? item : '';
+              return {
+                id: now.toString() + Math.random().toString(36).substring(2, 9) + index,
+                name: getBaseName(rawValue),
+                path: rawValue || `drawing_${now}_${index}.dxf`,
+                type: 'drawing',
+                tableIndex: index
+              };
+            });
             
             setGeneratedFiles(prev => [...prev, ...newFiles]);
             
@@ -566,7 +778,7 @@ const BrbDrawing: React.FC = () => {
         // 验证并处理parameterTables，确保每个表都有有效的template和template_type值
         // 后端的brb_materials.py函数需要template_type参数来区分模板类型
         const validParameterTables = parameterTables.map(table => {
-          const templateValue = table.template || '王一';
+          const templateValue = normalizeSectionTemplate(table.template);
           return {
             ...table,
             template: templateValue, // 保持template字段
@@ -612,14 +824,15 @@ const BrbDrawing: React.FC = () => {
         }
         
         console.log('响应正常，准备处理文件...');
-        
-        // 获取文件名
-        const contentDisposition = response.headers.get('content-disposition');
+        const contentType = response.headers.get('content-type') || '';
+
         let fileName = `${projectName}_材料单.xlsx`;
-        if (contentDisposition) {
-          const matches = /filename="([^"]+)"/.exec(contentDisposition);
-          if (matches && matches[1]) {
-            fileName = matches[1];
+        let filePath = `materials_${Date.now()}.xlsx`;
+        if (contentType.includes('application/json')) {
+          const result = await response.json();
+          if (result?.result?.path) {
+            fileName = result.result.name || getBaseName(result.result.path);
+            filePath = result.result.path;
           }
         }
         
@@ -627,7 +840,7 @@ const BrbDrawing: React.FC = () => {
         const materialsFile: GeneratedFile = {
           id: Date.now().toString() + Math.random().toString(36).substring(2, 9),
           name: fileName,
-          path: `materials_${Date.now()}.xlsx`, // 生成一个虚拟路径用于下载标识
+          path: filePath,
           type: 'materials',
           tableIndex: -1 // 材料单对应所有参数表，使用-1表示
         };
@@ -666,6 +879,77 @@ const BrbDrawing: React.FC = () => {
 
           
 
+
+  // 导入生产任务书 Excel
+  const handleImportTaskbook = async (file: File) => {
+    const hasContent =
+      !!projectName.trim() ||
+      parameterTables.some(
+        (table) =>
+          table.designForce ||
+          table.lengthQuantityTable.some((row) => row.length || row.quantity)
+      );
+    if (hasContent) {
+      const ok = window.confirm('导入任务书将覆盖当前项目名称与参数表（截面尺寸需自行补全），是否继续？');
+      if (!ok) return;
+    }
+
+    setIsParsingTaskbook(true);
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      const response = await fetch('/api/brb/parse-taskbook', {
+        method: 'POST',
+        body: formData,
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || data.status !== 'success') {
+        throw new Error(data.message || '解析任务书失败');
+      }
+
+      const result = data.result || {};
+      const tables = Array.isArray(result.parameterTables) ? result.parameterTables : [];
+      if (tables.length === 0) {
+        throw new Error('任务书中未解析到 BRB 产品');
+      }
+
+      setProjectName(result.projectName || '');
+      setParameterTables(
+        tables.map((table: any, index: number) => ({
+          id: table.id || (index === 0 ? '1' : String(Date.now() + index)),
+          designForce: String(table.designForce || ''),
+          width: table.width || '',
+          height: table.height || '',
+          thickness: table.thickness || '',
+          tubeWidth: table.tubeWidth || '',
+          tubeThickness: table.tubeThickness || '',
+          weld: table.weld || '',
+          coreMaterial: table.coreMaterial || 'Q235B',
+          yieldStrength:
+            yieldStrengthFromCoreMaterial(table.coreMaterial || '') ||
+            table.yieldStrength ||
+            '294',
+          template: normalizeSectionTemplate(table.template),
+          lengthQuantityTable:
+            Array.isArray(table.lengthQuantityTable) && table.lengthQuantityTable.length > 0
+              ? table.lengthQuantityTable.map((row: any) => ({
+                  length: String(row.length || ''),
+                  quantity: String(row.quantity || ''),
+                }))
+              : [{ length: '', quantity: '' }],
+        }))
+      );
+      setTotalQuantity(Number(result.totalQuantity) || 0);
+      showToast(data.message || '任务书导入成功', 'success', 6000);
+    } catch (error: any) {
+      showToast(error?.message || '导入任务书失败', 'error');
+    } finally {
+      setIsParsingTaskbook(false);
+      if (taskbookInputRef.current) {
+        taskbookInputRef.current.value = '';
+      }
+    }
+  };
 
   // 新建项目功能
   const handleNewProject = () => {
@@ -751,7 +1035,8 @@ const BrbDrawing: React.FC = () => {
         tubeThickness: table.tubeThickness || '',
         weld: table.weld || '',
         coreMaterial: table.coreMaterial || 'Q235B',
-        template: table.template || '王一',
+        yieldStrength: table.yieldStrength || '294',
+        template: normalizeSectionTemplate(table.template),
         // 确保lengthQuantityTable是有效的数组
         lengthQuantityTable: Array.isArray(table.lengthQuantityTable) ? 
           table.lengthQuantityTable.map(row => ({ 
@@ -803,7 +1088,8 @@ const BrbDrawing: React.FC = () => {
       tubeThickness: '',
       weld: '',
       coreMaterial: 'Q235B',
-      template: '王一',
+      yieldStrength: '294',
+      template: '王（丨）',
       lengthQuantityTable: [{ length: '', quantity: '' }]
     }]);
     setTotalQuantity(0);
@@ -826,12 +1112,17 @@ const BrbDrawing: React.FC = () => {
       return;
     }
 
+    let progressTimer: ReturnType<typeof setInterval> | null = null;
+    let timeoutId: ReturnType<typeof setTimeout> | null = null;
+
     try {
       setIsGeneratingTubeLayout(true);
-      showToast('正在生成方管排布图，请稍候...', 'info');
+      setTubeLayoutElapsedSec(0);
+      setTubeLayoutStatus('正在启动排布计算…');
+      showToast('方管排布已开始计算，请查看按钮下方进度提示', 'info', 4000);
 
       const validParameterTables = parameterTables.map(table => {
-        const templateValue = table.template || '王一';
+        const templateValue = normalizeSectionTemplate(table.template);
         return {
           ...table,
           template: templateValue,
@@ -839,10 +1130,19 @@ const BrbDrawing: React.FC = () => {
         };
       });
 
+      const startedAt = Date.now();
+      const tickProgress = () => {
+        const elapsed = Math.floor((Date.now() - startedAt) / 1000);
+        setTubeLayoutElapsedSec(elapsed);
+        setTubeLayoutStatus(getTubeLayoutProgressHint(elapsed));
+      };
+      tickProgress();
+      progressTimer = setInterval(tickProgress, 1000);
+
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => {
+      timeoutId = setTimeout(() => {
         controller.abort();
-      }, 60000);
+      }, TUBE_LAYOUT_FETCH_TIMEOUT_MS);
 
       const response = await fetch('/api/brb/tube-layout', {
         method: 'POST',
@@ -857,7 +1157,7 @@ const BrbDrawing: React.FC = () => {
         signal: controller.signal
       });
 
-      clearTimeout(timeoutId);
+      if (timeoutId) clearTimeout(timeoutId);
 
       if (!response.ok) {
         let errorData;
@@ -878,13 +1178,27 @@ const BrbDrawing: React.FC = () => {
         if (result.result && result.result.length > 0) {
           console.log('生成的文件:', result.result);
 
-          const newFiles: GeneratedFile[] = result.result.map((fileName: string, index: number) => ({
-            id: Date.now().toString() + Math.random().toString(36).substring(2, 9) + index,
-            name: fileName,
-            path: fileName,
-            type: 'tube_layout',
-            tableIndex: index
-          }));
+          const newFiles: GeneratedFile[] = result.result.map((item: any, index: number) => {
+            const now = Date.now();
+            if (item && typeof item === 'object' && item.path) {
+              return {
+                id: now.toString() + Math.random().toString(36).substring(2, 9) + index,
+                name: item.name || getBaseName(item.path),
+                path: item.path,
+                type: 'tube_layout',
+                tableIndex: index
+              };
+            }
+
+            const rawValue = typeof item === 'string' ? item : '';
+            return {
+              id: now.toString() + Math.random().toString(36).substring(2, 9) + index,
+              name: getBaseName(rawValue),
+              path: rawValue || `tube_layout_${now}_${index}.dxf`,
+              type: 'tube_layout',
+              tableIndex: index
+            };
+          });
 
           setGeneratedFiles(prev => [...prev, ...newFiles]);
 
@@ -912,16 +1226,6 @@ const BrbDrawing: React.FC = () => {
           }
         }
 
-        const blob = await response.blob();
-        const url = window.URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = fileName;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        window.URL.revokeObjectURL(url);
-
         const newFile: GeneratedFile = {
           id: Date.now().toString() + Math.random().toString(36).substring(2, 9),
           name: fileName,
@@ -942,13 +1246,20 @@ const BrbDrawing: React.FC = () => {
         showToast(`方管排布图生成成功！文件: ${newFile.name}`, 'success');
       }
     } catch (error: any) {
-      clearTimeout((error as any).timeoutId);
-      if ((error as any).name === 'AbortError') {
-        showToast('生成方管排布图超时，请检查网络连接或稍后重试', 'error');
+      if (timeoutId) clearTimeout(timeoutId);
+      if (error?.name === 'AbortError') {
+        showToast(
+          `生成超时（已等待 ${Math.floor(TUBE_LAYOUT_FETCH_TIMEOUT_MS / 1000)} 秒）。若计时曾持续增加，多半是深度搜索过久而非卡死，可稍后重试。`,
+          'error',
+          8000
+        );
       } else {
         showToast(`生成方管排布图失败: ${error.message}`, 'error');
       }
     } finally {
+      if (progressTimer) clearInterval(progressTimer);
+      setTubeLayoutStatus('');
+      setTubeLayoutElapsedSec(0);
       setIsGeneratingTubeLayout(false);
     }
   };
@@ -992,7 +1303,7 @@ const BrbDrawing: React.FC = () => {
         let tubeThickness = table.tubeThickness || '';
         let weld = table.weld || '';
         let coreMaterial = table.coreMaterial || table.core_material || 'Q235B';
-        let template = table.template || table.section_template || table.section || '王一';
+        let template = normalizeSectionTemplate(table.template || table.section_template || table.section);
         
         // 如果存在parameters对象（中文键），则使用其中的值
         if (table.parameters && typeof table.parameters === 'object') {
@@ -1050,7 +1361,11 @@ const BrbDrawing: React.FC = () => {
           tubeThickness: tubeThickness.toString().trim(),
           weld: weld.toString().trim(),
           coreMaterial: coreMaterial.trim() || 'Q235B',
-          template: template.trim() || '王一',
+          yieldStrength:
+            yieldStrengthFromCoreMaterial(coreMaterial) ||
+            (table.yieldStrength ? String(table.yieldStrength) : '') ||
+            '294',
+          template: normalizeSectionTemplate(template),
           lengthQuantityTable: processedLengthQuantity
         };
       });
@@ -1066,7 +1381,8 @@ const BrbDrawing: React.FC = () => {
         tubeThickness: '',
         weld: '',
         coreMaterial: 'Q235B',
-        template: '王一',
+        yieldStrength: '294',
+        template: '王（丨）',
         lengthQuantityTable: [{ length: '', quantity: '' }]
       }];
       
@@ -1091,50 +1407,159 @@ const BrbDrawing: React.FC = () => {
   }
 
   return (
-    <div className="container mx-auto px-4 py-6 space-y-6">
+    <div
+      className="container mx-auto px-4 py-3 space-y-3"
+      onDragEnter={(e) => {
+        if (dragFromIndex !== null) return;
+        if (pickTaskbookFromDataTransfer(e.dataTransfer)) {
+          e.preventDefault();
+          setIsTaskbookDragOver(true);
+        }
+      }}
+      onDragOver={(e) => {
+        if (dragFromIndex !== null) return;
+        if (pickTaskbookFromDataTransfer(e.dataTransfer) || [...(e.dataTransfer?.types || [])].includes('Files')) {
+          e.preventDefault();
+          e.dataTransfer.dropEffect = 'copy';
+        }
+      }}
+      onDragLeave={(e) => {
+        if (e.currentTarget === e.target) {
+          setIsTaskbookDragOver(false);
+        }
+      }}
+      onDrop={(e) => {
+        if (dragFromIndex !== null) return;
+        const file = pickTaskbookFromDataTransfer(e.dataTransfer);
+        if (!file) return;
+        e.preventDefault();
+        e.stopPropagation();
+        setIsTaskbookDragOver(false);
+        void handleImportTaskbook(file);
+      }}
+    >
       {/* 页面标题 */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center space-x-3">
-          <Box className="h-8 w-8 text-orange-600" />
-          <h1 className="text-2xl font-bold text-gray-900">BRB图纸绘制</h1>
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex items-center space-x-2">
+          <Box className="h-6 w-6 text-orange-600" />
+          <h1 className="text-xl font-bold text-gray-900">BRB图纸绘制</h1>
         </div>
-        <div className="flex space-x-3">
-          <button className="btn-secondary flex items-center space-x-2"
+        <div className="flex space-x-2">
+          <button className="btn-secondary flex items-center space-x-1.5 py-1.5 px-3 text-sm"
             onClick={() => handleNewProject()}
           >
-            <Plus className="h-4 w-4" />
+            <Plus className="h-3.5 w-3.5" />
             <span>新建项目</span>
           </button>
-          <button className="btn-secondary flex items-center space-x-2"
+          <button className="btn-secondary flex items-center space-x-1.5 py-1.5 px-3 text-sm"
             onClick={() => handleOpenProject()}
           >
-            <FolderOpen className="h-4 w-4" />
+            <FolderOpen className="h-3.5 w-3.5" />
             <span>打开项目</span>
           </button>
-          <button className="btn-secondary flex items-center space-x-2"
+          <button className="btn-secondary flex items-center space-x-1.5 py-1.5 px-3 text-sm"
             onClick={() => handleSaveProject()}
           >
-            <Box className="h-4 w-4" />
+            <Box className="h-3.5 w-3.5" />
             <span>保存项目</span>
           </button>
         </div>
       </div>
 
       {/* 项目信息区域 */}
-      <div className="card p-6">
-        <div className="flex flex-col md:flex-row items-center justify-between gap-4">
-          <div className="flex-1">
-            <label className="form-label text-xl">项目名称</label>
+      <div className="card px-4 py-2.5">
+        <div className="flex flex-col md:flex-row md:items-center gap-3">
+          <div className="flex-1 min-w-0 flex items-center gap-2">
+            <label className="shrink-0 text-base font-semibold text-gray-700 whitespace-nowrap">项目名称</label>
             <input
               type="text"
-              className="input-field"
+              className="input-field py-1.5"
               value={projectName}
               onChange={(e) => setProjectName(e.target.value)}
               placeholder="请输入项目名称"
             />
           </div>
-          <div className="flex items-center justify-center min-w-[150px]">
-            <div className="text-lg font-semibold text-brb-blue-600">
+
+          <input
+            ref={taskbookInputRef}
+            type="file"
+            accept=".xlsx,.xlsm,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            className="hidden"
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (file) {
+                void handleImportTaskbook(file);
+              }
+            }}
+          />
+          <div
+            role="button"
+            tabIndex={0}
+            title="拖拽或点击导入生产任务书 Excel"
+            className={`md:w-[240px] shrink-0 rounded-lg border-2 border-dashed px-3 py-1.5 transition-colors cursor-pointer ${
+              isTaskbookDragOver
+                ? 'border-brb-blue-500 bg-blue-50'
+                : 'border-gray-300 bg-gray-50 hover:border-brb-blue-400 hover:bg-blue-50/60'
+            } ${isParsingTaskbook ? 'opacity-70 pointer-events-none' : ''}`}
+            onClick={() => {
+              if (!isParsingTaskbook) taskbookInputRef.current?.click();
+            }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                taskbookInputRef.current?.click();
+              }
+            }}
+            onDragEnter={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              setIsTaskbookDragOver(true);
+            }}
+            onDragOver={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              e.dataTransfer.dropEffect = 'copy';
+              setIsTaskbookDragOver(true);
+            }}
+            onDragLeave={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              setIsTaskbookDragOver(false);
+            }}
+            onDrop={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              setIsTaskbookDragOver(false);
+              const file = pickTaskbookFromDataTransfer(e.dataTransfer);
+              if (!file) {
+                showToast('请拖入 .xlsx / .xlsm 生产任务书文件', 'error');
+                return;
+              }
+              void handleImportTaskbook(file);
+            }}
+          >
+            <div className="flex items-center space-x-2 text-brb-blue-700 text-sm font-medium">
+              <FileSpreadsheet className="h-4 w-4 shrink-0" />
+              <span className="truncate">
+                {isParsingTaskbook
+                  ? '解析任务书中...'
+                  : isTaskbookDragOver
+                    ? '松开即可导入'
+                    : '拖入/选择任务书'}
+              </span>
+            </div>
+          </div>
+
+          <div className="flex items-center shrink-0 gap-3">
+            <button
+              type="button"
+              onClick={addParameterTable}
+              className="btn-secondary flex items-center space-x-1.5 py-1.5 px-3 text-sm"
+            >
+              <Plus className="h-3 w-3" />
+              <span>添加参数表</span>
+            </button>
+            <div className="text-sm font-semibold text-brb-blue-600 whitespace-nowrap">
               BRB总数量: {totalQuantity}件
             </div>
           </div>
@@ -1142,22 +1567,21 @@ const BrbDrawing: React.FC = () => {
       </div>
 
       {/* 参数表区域 */}
-      {/* 添加参数表按钮（移到参数表上方） */}
-      <div className="mb-4">
-        <button
-          onClick={addParameterTable}
-          className="btn-secondary flex items-center justify-center space-x-2 py-2 px-4 text-sm"
-        >
-          <Plus className="h-3 w-3" />
-          <span>添加参数表</span>
-        </button>
-      </div>
-      
       <div className="overflow-x-auto pb-4">
         <div 
-          className="flex space-x-6 min-w-max transition-all duration-300 ease-in-out"
+          data-param-tables
+          className={`flex items-start gap-6 min-w-max transition-all duration-300 ease-in-out ${
+            dragFromIndex !== null ? 'py-1' : ''
+          }`}
           onDragOver={(e) => {
+            // 参数表重排优先；仅在非重排时把 Excel 文件交给页面级导入
+            if (dragFromIndex === null) {
+              if (pickTaskbookFromDataTransfer(e.dataTransfer) || [...(e.dataTransfer?.types || [])].includes('Files')) {
+                return;
+              }
+            }
             e.preventDefault();
+            e.dataTransfer.dropEffect = 'move';
             
             // 计算鼠标在容器中的位置，用于显示插入指示线
             const container = e.currentTarget as HTMLElement;
@@ -1191,47 +1615,69 @@ const BrbDrawing: React.FC = () => {
             }
           }}
           onDrop={(e) => {
+            if (dragFromIndex === null) {
+              const file = pickTaskbookFromDataTransfer(e.dataTransfer);
+              if (file) {
+                e.preventDefault();
+                e.stopPropagation();
+                setIsTaskbookDragOver(false);
+                void handleImportTaskbook(file);
+                return;
+              }
+            }
             e.preventDefault();
             const fromIndex = parseInt(e.dataTransfer.getData('text/plain'), 10);
-            let toIndex = dragToIndex;
-            
-            if (toIndex === null) {
-              toIndex = parameterTables.length;
-            }
-            
-            // 调整位置：如果从前面拖拽到后面，需要减去1
-            let finalToIndex = toIndex;
-            if (fromIndex < finalToIndex) {
-              finalToIndex -= 1;
-            }
-            
-            if (fromIndex !== finalToIndex) {
-              const newTables = [...parameterTables];
-              const [movedTable] = newTables.splice(fromIndex, 1);
-              newTables.splice(finalToIndex, 0, movedTable);
-              setParameterTables(newTables);
-            }
-            setDragFromIndex(null);
-            setDragToIndex(null);
+            applyTableReorder(fromIndex, dragToIndex, parameterTables.length);
           }}
         >
           {/* 渲染参数表和插入点 */}
-          {parameterTables.map((table, tableIndex) => (
+          {parameterTables.map((table, tableIndex) => {
+            const isRemoving = removingTableId === table.id;
+            const isEntering = enteringTableId === table.id && !enterReady;
+            const isDragging = dragFromIndex === tableIndex;
+            const showInsertBefore =
+              dragFromIndex !== null &&
+              dragToIndex === tableIndex &&
+              dragToIndex !== dragFromIndex &&
+              dragToIndex !== dragFromIndex + 1;
+            const dragShift =
+              !isRemoving && !isEntering
+                ? getDragLayoutShift(tableIndex, dragFromIndex, dragToIndex)
+                : 0;
+
+            return (
             <React.Fragment key={table.id}>
               {/* 在适当位置显示插入点 */}
-              {dragToIndex !== null && 
-               dragToIndex === tableIndex && 
-               dragFromIndex !== tableIndex && (
-                <div 
-                  className="w-2 bg-brb-blue-500 rounded-full transition-all duration-300 ease-in-out"
-                  style={{ height: '100%', marginRight: '16px' }}
-                />
-              )}
+              {showInsertBefore && renderInsertIndicator()}
               
               {/* 参数表卡片 */}
+              <div
+                data-table-id={table.id}
+                className={`shrink-0 overflow-hidden ${
+                  isRemoving
+                    ? 'w-0 opacity-0 -translate-x-3 scale-95 pointer-events-none transition-all duration-300 ease-out'
+                    : isEntering
+                      ? 'w-0 opacity-0 translate-x-3 scale-95 pointer-events-none'
+                      : 'w-80 opacity-100 scale-100'
+                }`}
+                style={
+                  !isRemoving && !isEntering
+                    ? {
+                        transform: `translateX(${dragShift}px)`,
+                        transition: 'transform 220ms cubic-bezier(0.22, 1, 0.36, 1), width 300ms ease, opacity 300ms ease',
+                      }
+                    : undefined
+                }
+              >
               <div 
-                className="card p-5 w-80 shrink-0 transition-all duration-300 ease-in-out shadow-md hover:shadow-lg"
-                style={{ opacity: dragFromIndex === tableIndex ? 0.5 : 1, minHeight: '500px' }}
+                className={`card p-5 w-80 shrink-0 transition-all duration-300 ease-out shadow-md hover:shadow-lg ${
+                  isDragging
+                    ? 'opacity-20 scale-[0.98] ring-2 ring-dashed ring-brb-blue-300'
+                    : justMovedTableId === table.id
+                      ? 'ring-2 ring-brb-blue-500 ring-offset-2 shadow-xl shadow-brb-blue-200/60'
+                      : ''
+                }`}
+                style={{ minHeight: '500px' }}
                 onDragOver={(e) => handleDragOver(e, tableIndex)}
                 onDragLeave={handleDragLeave}
                 onDrop={(e) => handleDrop(e, tableIndex)}
@@ -1245,18 +1691,34 @@ const BrbDrawing: React.FC = () => {
                 <h3 className="text-lg font-semibold text-gray-900 hover:text-brb-blue-600 transition-colors">
                   BRB {tableIndex + 1}参数
                 </h3>
-                {parameterTables.length > 1 && (
+                <div className="flex items-center space-x-1">
                   <button
+                    type="button"
+                    title="复制参数表"
                     onClick={(e) => {
                       e.stopPropagation();
-                      removeParameterTable(table.id);
+                      duplicateParameterTable(table.id);
                     }}
                     onDragStart={(e) => e.stopPropagation()}
-                    className="text-red-600 hover:text-red-700 p-2 rounded"
+                    className="text-brb-blue-600 hover:text-brb-blue-700 p-2 rounded"
                   >
-                    <Trash2 className="h-4 w-4" />
+                    <Copy className="h-4 w-4" />
                   </button>
-                )}
+                  {parameterTables.length > 1 && (
+                    <button
+                      type="button"
+                      title="删除参数表"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        removeParameterTable(table.id);
+                      }}
+                      onDragStart={(e) => e.stopPropagation()}
+                      className="text-red-600 hover:text-red-700 p-2 rounded"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  )}
+                </div>
               </div>
 
             {/* 基本参数 */}
@@ -1266,12 +1728,12 @@ const BrbDrawing: React.FC = () => {
                 <label className="block text-base font-semibold text-gray-800 w-1/3">选择截面</label>
                 <select
                   className="w-2/3 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brb-blue-500 focus:border-transparent transition-all duration-200 text-sm"
-                  value={table.template}
+                  value={normalizeSectionTemplate(table.template)}
                   onChange={(e) => updateParameterTable(table.id, 'template', e.target.value)}
                 >
-                  <option value="王一">王一</option>
-                  <option value="王工">王工</option>
-                  <option value="十一">十一</option>
+                  {SECTION_TEMPLATE_OPTIONS.map((opt) => (
+                    <option key={opt.value} value={opt.value}>{opt.label}</option>
+                  ))}
                 </select>
               </div>
               
@@ -1294,6 +1756,37 @@ const BrbDrawing: React.FC = () => {
                   <span className="ml-2 text-sm text-gray-600">KN</span>
                 </div>
               </div>
+
+              <div className="flex items-center justify-between">
+                <label className="block text-base font-semibold text-gray-800 w-2/5">芯板材料：</label>
+                <input
+                  type="text"
+                  className="w-3/5 px-4 py-1.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brb-blue-500 focus:border-transparent transition-all duration-200 text-sm"
+                  onDragStart={(e) => e.stopPropagation()}
+                  value={table.coreMaterial}
+                  onChange={(e) => updateParameterTable(table.id, 'coreMaterial', e.target.value)}
+                  placeholder="Q235B（如：Q235B、Q345B、LY160、LY225）"
+                />
+              </div>
+
+              {(usesWangSectionDiagram(table.template)) ? (
+                <WangSectionParams
+                  variant={isShiSectionTemplate(table.template) ? 'shi' : 'wang'}
+                  values={{
+                    width: table.width,
+                    height: table.height,
+                    thickness: table.thickness,
+                    weld: table.weld,
+                    tubeWidth: table.tubeWidth,
+                    tubeThickness: table.tubeThickness,
+                  }}
+                  designForce={table.designForce}
+                  yieldStrength={table.yieldStrength || '294'}
+                  onYieldStrengthChange={(value) => updateParameterTable(table.id, 'yieldStrength', value)}
+                  onChange={(field, value) => updateParameterTable(table.id, field, value)}
+                />
+              ) : (
+                <>
               <div className="flex items-center justify-between">
                 <label className="block text-base font-semibold text-gray-800 w-3/5">截面宽度：</label>
                 <div className="flex items-center">
@@ -1408,17 +1901,8 @@ const BrbDrawing: React.FC = () => {
                   <span className="ml-2 text-sm text-gray-600">mm</span>
                 </div>
               </div>
-              <div className="flex items-center justify-between">
-                <label className="block text-base font-semibold text-gray-800 w-2/5">芯板材料：</label>
-                <input
-                  type="text"
-                  className="w-3/5 px-4 py-1.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brb-blue-500 focus:border-transparent transition-all duration-200 text-sm"
-                  onDragStart={(e) => e.stopPropagation()}
-                  value={table.coreMaterial}
-                  onChange={(e) => updateParameterTable(table.id, 'coreMaterial', e.target.value)}
-                  placeholder="Q235B（如：Q235B、Q345B、LY160、LY225）"
-                />
-              </div>
+                </>
+              )}
             </div>
 
             {/* 长度-数量表格 */}
@@ -1499,17 +1983,17 @@ const BrbDrawing: React.FC = () => {
               </div>
             </div>
             </div>
+            </div>
             </React.Fragment>
-          ))}
+            );
+          })}
           
           {/* 在容器末尾显示插入点（如果需要） */}
-          {dragToIndex !== null && 
-           dragToIndex === parameterTables.length && (
-            <div 
-              className="w-2 bg-brb-blue-500 rounded-full transition-all duration-300 ease-in-out"
-              style={{ height: '100%', marginLeft: '16px' }}
-            />
-          )}
+          {dragFromIndex !== null &&
+           dragToIndex === parameterTables.length &&
+           dragToIndex !== dragFromIndex &&
+           dragToIndex !== dragFromIndex + 1 &&
+           renderInsertIndicator()}
         </div>
       </div>
       
@@ -1536,12 +2020,24 @@ const BrbDrawing: React.FC = () => {
           onClick={generateTubeLayout}
           disabled={isGeneratingTubeLayout}
         >
-          <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <svg xmlns="http://www.w3.org/2000/svg" className={`h-4 w-4 ${isGeneratingTubeLayout ? 'animate-spin' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
           </svg>
-          <span>{isGeneratingTubeLayout ? '生成中...' : '生成方管排布图'}</span>
+          <span>
+            {isGeneratingTubeLayout
+              ? `排布计算中 ${tubeLayoutElapsedSec}s`
+              : '生成方管排布图'}
+          </span>
         </button>
       </div>
+
+      {isGeneratingTubeLayout && (
+        <div className="rounded-md border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-900 mt-3">
+          <div className="font-medium">方管排布计算进行中 · {tubeLayoutElapsedSec} 秒</div>
+          <div className="mt-1 text-blue-800">{tubeLayoutStatus || '正在启动排布计算…'}</div>
+          <div className="mt-1 text-xs text-blue-600">大项目深度搜索可能需要 1～3 分钟，计时持续增加即为正常。</div>
+        </div>
+      )}
       
       {/* 下载列表 */}
       {generatedFiles.length > 0 && (
@@ -1558,29 +2054,26 @@ const BrbDrawing: React.FC = () => {
                     return;
                   }
                   
-                  // 验证并处理parameterTables，确保每个表都有有效的template和template_type值
-                  // 后端的brb_materials.py函数需要template_type参数来区分模板类型
-                  const validParameterTables = parameterTables.map(table => {
-                    const templateValue = table.template || '王一';
-                    return {
-                      ...table,
-                      template: templateValue, // 保持template字段
-                      template_type: templateValue // 添加template_type字段，与template值相同
-                    };
-                  });
+                  const downloadableFiles = generatedFiles
+                    .map(file => ({
+                      path: file.path || file.name,
+                      name: file.name || getBaseName(file.path || ''),
+                    }))
+                    .filter(f => f.path && !f.path.startsWith('drawing_') && !f.path.startsWith('tube_layout_') && !f.path.startsWith('materials_'));
 
-                  // 调用新的批量下载API，支持所有生成的文件
-                  const response = await fetch('/api/brb/batch-download', {
+                  if (downloadableFiles.length === 0) {
+                    showToast('当前文件尚未落盘，请先重新生成后再批量下载', 'error');
+                    return;
+                  }
+
+                  // 批量下载已生成文件，避免再次触发后端生成
+                  const response = await fetch('/api/download/batch', {
                     method: 'POST',
                     headers: {
                       'Content-Type': 'application/json',
                     },
                     body: JSON.stringify({
-                      projectName,
-                      parameterTables: validParameterTables,
-                      totalQuantity,
-                      fileTypes: generatedFiles.map(file => file.type),
-                      tableIndices: generatedFiles.map(file => file.tableIndex)
+                      files: downloadableFiles,
                     })
                   });
                   
@@ -1599,7 +2092,7 @@ const BrbDrawing: React.FC = () => {
                   document.body.removeChild(a);
                   window.URL.revokeObjectURL(url);
                   
-                  showToast(`成功下载 ${generatedFiles.length} 个文件`, 'success');
+                  showToast(`成功下载 ${downloadableFiles.length} 个文件`, 'success');
                 } catch (error) {
                   console.error('批量下载出错:', error);
                   showToast('批量下载失败', 'error');
@@ -1637,98 +2130,34 @@ const BrbDrawing: React.FC = () => {
                             
                             // 根据文件类型调用不同的API端点
                             if (file.type === 'materials') {
-                              // 对于材料单，重新调用生成API获取文件
-                              // 验证并处理parameterTables，确保每个表都有有效的template和template_type值
-                              const validParameterTables = parameterTables.map(table => {
-                                const templateValue = table.template || '王一';
-                                return {
-                                  ...table,
-                                  template: templateValue, // 保持template字段
-                                  template_type: templateValue // 添加template_type字段，与template值相同
-                                };
-                              });
-                              
-                              response = await fetch('/api/brb/materials', {
-                                method: 'POST',
-                                headers: {
-                                  'Content-Type': 'application/json',
-                                },
-                                body: JSON.stringify({
-                                  projectName,
-                                  parameterTables: validParameterTables,
-                                  totalQuantity: totalQuantity
-                                })
-                              });
-                            } else if (file.type === 'tube_layout') {
-                              // 对于方管排布图，使用文件下载API
-                              const downloadUrl = `/api/download/file?path=${encodeURIComponent(file.name)}`;
+                              // 材料单下载直接读取已生成文件，避免重复调用后端生成流程
+                              const downloadTarget = file.path || file.name;
+                              const downloadUrl = `/api/download/file?path=${encodeURIComponent(downloadTarget)}`;
                               response = await fetch(downloadUrl, {
                                 method: 'GET',
                                 headers: {
                                   'Content-Type': 'application/json',
                                 }
                               });
-                              
-                              // 如果API返回JSON，说明需要重新生成文件
-                              if (response.headers.get('content-type')?.includes('application/json')) {
-                                const errorData = await response.json();
-                                if (errorData.status === 'error') {
-                                  // 重新调用生成API获取文件
-                                  // 验证并处理parameterTables，确保每个表都有有效的template和template_type值
-                                  const validParameterTables = parameterTables.map(table => {
-                                    const templateValue = table.template || '王一';
-                                    return {
-                                      ...table,
-                                      template: templateValue, // 保持template字段
-                                      template_type: templateValue // 添加template_type字段，与template值相同
-                                    };
-                                  });
-                                  
-                                  response = await fetch('/api/brb/tube-layout', {
-                                    method: 'POST',
-                                    headers: {
-                                      'Content-Type': 'application/json',
-                                    },
-                                    body: JSON.stringify({
-                                      projectName,
-                                      parameterTables: validParameterTables,
-                                      totalQuantity: totalQuantity
-                                    })
-                                  });
-                                }
-                              }
-                            } else {
-                              // 对于图纸，只发送该文件对应的参数表
-                              const tableIndex = file.tableIndex !== undefined ? file.tableIndex : 0;
-                              
-                              // 验证并处理parameterTables，确保每个表都有有效的template和template_type值
-                              const validSingleParameterTable = [parameterTables[tableIndex]].map(table => {
-                                const templateValue = table.template || '王一';
-                                return {
-                                  ...table,
-                                  template: templateValue, // 保持template字段
-                                  template_type: templateValue // 添加template_type字段，与template值相同
-                                };
-                              });
-                              
-                              // 计算该参数表的总数量
-                              let singleTotalQuantity = 0;
-                              validSingleParameterTable[0].lengthQuantityTable.forEach(row => {
-                                const quantity = parseInt(row.quantity) || 0;
-                                singleTotalQuantity += quantity;
-                              });
-                              
-                              // 调用专门的API获取单个图纸文件流
-                              response = await fetch('/api/brb/drawing-download', {
-                                method: 'POST',
+                            } else if (file.type === 'tube_layout') {
+                              // 方管排布图下载直接读取已生成文件，避免重复调用后端生成流程
+                              const downloadTarget = file.path || file.name;
+                              const downloadUrl = `/api/download/file?path=${encodeURIComponent(downloadTarget)}`;
+                              response = await fetch(downloadUrl, {
+                                method: 'GET',
                                 headers: {
                                   'Content-Type': 'application/json',
-                                },
-                                body: JSON.stringify({
-                                  projectName,
-                                  parameterTable: validSingleParameterTable[0],
-                                  totalQuantity: singleTotalQuantity
-                                })
+                                }
+                              });
+                            } else {
+                              // 图纸下载直接读取已生成文件，避免重复调用后端图纸生成流程
+                              const downloadTarget = file.path || file.name;
+                              const downloadUrl = `/api/download/file?path=${encodeURIComponent(downloadTarget)}`;
+                              response = await fetch(downloadUrl, {
+                                method: 'GET',
+                                headers: {
+                                  'Content-Type': 'application/json',
+                                }
                               });
                             }
                             
@@ -1761,8 +2190,9 @@ const BrbDrawing: React.FC = () => {
                         className="btn-danger text-sm flex items-center space-x-1"
                         onClick={async () => {
                           try {
-                            // 对于材料单、使用虚拟路径的图纸和方管排布图，我们不需要调用后端API来删除文件
-                            if (file.type !== 'materials' && !file.path.startsWith('drawing_') && !file.path.startsWith('tube_layout_')) {
+                            // 对于使用虚拟路径的文件，不调用后端删除
+                            const isVirtualPath = file.path.startsWith('drawing_') || file.path.startsWith('tube_layout_') || file.path.startsWith('materials_');
+                            if (!isVirtualPath) {
                               // 对于实际保存到磁盘的图纸，调用后端API删除文件
                               const response = await fetch('/api/download/delete', {
                                 method: 'POST',

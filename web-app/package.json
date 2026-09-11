@@ -1,6 +1,6 @@
 {
   "name": "yishexu-designtools-web",
-  "version": "3.1.0",
+  "version": "3.4.0",
   "description": "羿射旭阻尼器设计工具集",
   "type": "module",
   "scripts": {
@@ -13,12 +13,18 @@
   "dependencies": {
     "@headlessui/react": "^1.7.19",
     "@heroicons/react": "^2.2.0",
+    "@tinymce/tinymce-react": "^6.3.0",
     "axios": "^1.13.2",
+    "exceljs": "^4.4.0",
     "lucide-react": "^0.263.1",
+    "luckyexcel": "^1.0.1",
+    "luckysheet": "^2.1.13",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-router-dom": "^6.30.3",
-    "xlsx": "^0.18.5"
+    "tinymce": "^8.3.2",
+    "xlsx": "^0.18.5",
+    "xlsx-js-style": "^1.2.0"
   },
   "devDependencies": {
     "@types/react": "^18.3.27",

@@ -1,0 +1,29 @@
+{
+  "projectName": "藏族自治州职业技术学校",
+  "parameterTables": [
+    {
+      "id": "1",
+      "designForce": "5000",
+      "width": "200",
+      "height": "200",
+      "thickness": "30",
+      "tubeWidth": "300",
+      "tubeThickness": "4",
+      "weld": "25",
+      "coreMaterial": "Q235B",
+      "template": "王一",
+      "lengthQuantityTable": [
+        {
+          "length": "4200",
+          "quantity": "16"
+        },
+        {
+          "length": "3100",
+          "quantity": "32"
+        }
+      ]
+    }
+  ],
+  "totalQuantity": 48,
+  "version": "1.0"
+}

@@ -1,0 +1,141 @@
+{
+  "projectName": "北京第二实验中学",
+  "parameterTables": [
+    {
+      "id": "1",
+      "designForce": "2000",
+      "width": "150",
+      "height": "150",
+      "thickness": "20",
+      "tubeWidth": "250",
+      "tubeThickness": "4",
+      "weld": "16",
+      "coreMaterial": "LY225",
+      "template": "王一",
+      "lengthQuantityTable": [
+        {
+          "length": "5300",
+          "quantity": "1"
+        }
+      ]
+    },
+    {
+      "id": "1768544530827",
+      "designForce": "2000",
+      "width": "150",
+      "height": "150",
+      "thickness": "20",
+      "tubeWidth": "200",
+      "tubeThickness": "4",
+      "weld": "16",
+      "coreMaterial": "LY225",
+      "template": "王一",
+      "lengthQuantityTable": [
+        {
+          "length": "3000",
+          "quantity": "6"
+        },
+        {
+          "length": "2700",
+          "quantity": "88"
+        }
+      ]
+    },
+    {
+      "id": "1768544342107",
+      "designForce": "1300",
+      "width": "160",
+      "height": "160",
+      "thickness": "12",
+      "tubeWidth": "200",
+      "tubeThickness": "4",
+      "weld": "10",
+      "coreMaterial": "LY225",
+      "template": "王一",
+      "lengthQuantityTable": [
+        {
+          "length": "5100",
+          "quantity": "2"
+        },
+        {
+          "length": "4900",
+          "quantity": "14"
+        },
+        {
+          "length": "3200",
+          "quantity": "9"
+        },
+        {
+          "length": "3000",
+          "quantity": "14"
+        },
+        {
+          "length": "2800",
+          "quantity": "2"
+        },
+        {
+          "length": "2600",
+          "quantity": "7"
+        }
+      ]
+    },
+    {
+      "id": "1768544392549",
+      "designForce": "1200",
+      "width": "150",
+      "height": "150",
+      "thickness": "12",
+      "tubeWidth": "200",
+      "tubeThickness": "4",
+      "weld": "10",
+      "coreMaterial": "LY225",
+      "template": "王一",
+      "lengthQuantityTable": [
+        {
+          "length": "3600",
+          "quantity": "20"
+        },
+        {
+          "length": "3400",
+          "quantity": "16"
+        },
+        {
+          "length": "2700",
+          "quantity": "8"
+        }
+      ]
+    },
+    {
+      "id": "1768544410379",
+      "designForce": "400",
+      "width": "140",
+      "height": "140",
+      "thickness": "12",
+      "tubeWidth": "200",
+      "tubeThickness": "4",
+      "weld": "10",
+      "coreMaterial": "LY225",
+      "template": "十一",
+      "lengthQuantityTable": [
+        {
+          "length": "7100",
+          "quantity": "1"
+        },
+        {
+          "length": "4100",
+          "quantity": "1"
+        },
+        {
+          "length": "3700",
+          "quantity": "8"
+        },
+        {
+          "length": "2900",
+          "quantity": "5"
+        }
+      ]
+    }
+  ],
+  "totalQuantity": 202,
+  "version": "1.0"
+}

@@ -1,17 +1,20 @@
 import os
-import logging
-from dxf_to_csv import dxf_to_csv
+import sys
 
-# 配置日志
-logging.basicConfig(filename='refresh_brb_templates.log', level=logging.INFO,
-                    format='%(asctime)s - %(levelname)s - %(message)s')
+# 添加项目根目录到Python路径
+sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
+
+# 导入日志模块
+from app.utils.logger import function_logger as logging
+from app.utils.logger import function_alarm_logger as alarm_logging
+
+from dxf_to_csv import dxf_to_csv
 
 def refresh_brb_templates():
     """
     刷新BRB模版数据
     遍历design/data目录下的所有DXF文件，将其转换为CSV文件
     """
-    print("开始刷新BRB模版数据...")
     logging.info("开始刷新BRB模版数据...")
     
     # 定义数据目录路径
@@ -19,7 +22,6 @@ def refresh_brb_templates():
     
     # 检查数据目录是否存在
     if not os.path.exists(data_dir):
-        print(f"错误：数据目录 {data_dir} 不存在")
         logging.error(f"数据目录 {data_dir} 不存在")
         return False
     
@@ -32,11 +34,9 @@ def refresh_brb_templates():
                 dxf_files.append(dxf_path)
     
     if not dxf_files:
-        print("未找到任何DXF文件")
         logging.info("未找到任何DXF文件")
         return True
     
-    print(f"找到 {len(dxf_files)} 个DXF文件，开始转换...")
     logging.info(f"找到 {len(dxf_files)} 个DXF文件，开始转换...")
     
     # 转换每个DXF文件
@@ -47,7 +47,6 @@ def refresh_brb_templates():
         # 构造输出CSV文件路径（与DXF文件同名，只是扩展名改为.csv）
         csv_path = os.path.splitext(dxf_path)[0] + '.csv'
         
-        print(f"\n转换: {os.path.basename(dxf_path)} -> {os.path.basename(csv_path)}")
         logging.info(f"开始转换: {dxf_path} -> {csv_path}")
         
         # 调用dxf_to_csv函数进行转换

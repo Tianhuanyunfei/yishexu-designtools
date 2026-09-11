@@ -9,6 +9,12 @@ const Settings: React.FC = () => {
   const [password, setPassword] = useState('');
   const [passwordError, setPasswordError] = useState('');
   const [verifying, setVerifying] = useState(false);
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [changePasswordError, setChangePasswordError] = useState('');
+  const [changingPassword, setChangingPassword] = useState(false);
+  const [showChangePasswordForm, setShowChangePasswordForm] = useState(false);
   const { showToast } = useToast();
   
   // 验证密码（调用后端API）
@@ -50,6 +56,62 @@ const Settings: React.FC = () => {
     setPassword('');
     setPasswordError('');
     showToast('开发者模式已关闭', 'info');
+  };
+
+  // 修改密码（调用后端API）
+  const handleChangePassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setChangingPassword(true);
+    setChangePasswordError('');
+    
+    // 验证新密码和确认密码是否一致
+    if (newPassword !== confirmPassword) {
+      setChangePasswordError('新密码和确认密码不一致');
+      setChangingPassword(false);
+      return;
+    }
+    
+    try {
+      // 从本地存储获取令牌
+      const token = localStorage.getItem('token');
+      if (!token) {
+        setChangePasswordError('未登录或登录已过期');
+        showToast('未登录或登录已过期', 'error');
+        setChangingPassword(false);
+        return;
+      }
+      
+      const response = await fetch('/api/auth/change-password', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+        body: JSON.stringify({ 
+          current_password: currentPassword, 
+          new_password: newPassword 
+        }),
+      });
+      
+      const result = await response.json();
+      
+      if (result.status === 'success') {
+        showToast(result.message || '密码修改成功', 'success');
+        // 清空表单
+        setCurrentPassword('');
+        setNewPassword('');
+        setConfirmPassword('');
+      } else {
+        setChangePasswordError(result.message || '密码修改失败，请重试');
+        showToast(result.message || '密码修改失败', 'error');
+      }
+    } catch (error) {
+      console.error('修改密码时出错:', error);
+      setChangePasswordError('修改失败，请检查网络连接或联系管理员');
+      showToast('修改失败，请重试', 'error');
+    } finally {
+      setChangingPassword(false);
+    }
   };
 
   // 预设颜色选项
@@ -290,6 +352,85 @@ const Settings: React.FC = () => {
               >
                 清除所有本地缓存数据
               </button>
+            </div>
+          </div>
+        </div>
+        
+        {/* 密码管理部分 */}
+        <div>
+          <h2 className="text-xl font-semibold text-gray-900 mb-4">密码管理</h2>
+          <div className="space-y-6">
+            {/* 修改密码按钮 */}
+            <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
+              <p className="text-sm text-blue-800 mb-4">
+                修改您的账户密码
+              </p>
+              {!showChangePasswordForm ? (
+                <button
+                  onClick={() => setShowChangePasswordForm(true)}
+                  className="bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-6 rounded-lg transition-colors duration-200"
+                >
+                  修改密码
+                </button>
+              ) : (
+                <form onSubmit={handleChangePassword} className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">当前密码</label>
+                    <input
+                      type="password"
+                      value={currentPassword}
+                      onChange={(e) => setCurrentPassword(e.target.value)}
+                      placeholder="请输入当前密码"
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">新密码</label>
+                    <input
+                      type="password"
+                      value={newPassword}
+                      onChange={(e) => setNewPassword(e.target.value)}
+                      placeholder="请输入新密码"
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">确认新密码</label>
+                    <input
+                      type="password"
+                      value={confirmPassword}
+                      onChange={(e) => setConfirmPassword(e.target.value)}
+                      placeholder="请确认新密码"
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                  {changePasswordError && (
+                    <p className="text-red-600 text-sm mt-2">{changePasswordError}</p>
+                  )}
+                  <div className="flex space-x-4">
+                    <button
+                      type="submit"
+                      className="bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-6 rounded-lg transition-colors duration-200"
+                      disabled={changingPassword}
+                    >
+                      {changingPassword ? '正在修改...' : '保存修改'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowChangePasswordForm(false);
+                        setCurrentPassword('');
+                        setNewPassword('');
+                        setConfirmPassword('');
+                        setChangePasswordError('');
+                      }}
+                      className="bg-gray-600 hover:bg-gray-700 text-white font-medium py-2 px-6 rounded-lg transition-colors duration-200"
+                    >
+                      取消
+                    </button>
+                  </div>
+                </form>
+              )}
             </div>
           </div>
         </div>

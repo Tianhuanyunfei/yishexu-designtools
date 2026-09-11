@@ -1,0 +1,80 @@
+{
+  "projectName": "河南大学龙子湖项目3",
+  "parameterTables": [
+    {
+      "id": "1",
+      "designForce": "4600",
+      "width": "210",
+      "height": "210",
+      "thickness": "25",
+      "tubeWidth": "250",
+      "tubeThickness": "4",
+      "weld": "18",
+      "coreMaterial": "Q235B",
+      "yieldStrength": "294",
+      "template": "王（丨）",
+      "lengthQuantityTable": [
+        {
+          "length": "3500",
+          "quantity": "24"
+        }
+      ]
+    },
+    {
+      "id": "1787536565618",
+      "designForce": "2350",
+      "width": "140",
+      "height": "140",
+      "thickness": "20",
+      "tubeWidth": "200",
+      "tubeThickness": "4",
+      "weld": "13",
+      "coreMaterial": "Q235B",
+      "yieldStrength": "294",
+      "template": "王（丨）",
+      "lengthQuantityTable": [
+        {
+          "length": "4300",
+          "quantity": "14"
+        },
+        {
+          "length": "4100",
+          "quantity": "14"
+        },
+        {
+          "length": "3600",
+          "quantity": "16"
+        },
+        {
+          "length": "3500",
+          "quantity": "128"
+        }
+      ]
+    },
+    {
+      "id": "1787536565619",
+      "designForce": "3550",
+      "width": "200",
+      "height": "200",
+      "thickness": "20",
+      "tubeWidth": "250",
+      "tubeThickness": "4",
+      "weld": "13",
+      "coreMaterial": "Q235B",
+      "yieldStrength": "294",
+      "template": "王（丨）",
+      "lengthQuantityTable": [
+        {
+          "length": "3600",
+          "quantity": "48"
+        },
+        {
+          "length": "3400",
+          "quantity": "36"
+        }
+      ]
+    }
+  ],
+  "totalQuantity": 280,
+  "version": "1.0"
+}
