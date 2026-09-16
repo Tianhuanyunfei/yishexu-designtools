@@ -177,7 +177,7 @@ try {
 Write-Host "Testing server connection..."
 $connectedPath = Connect-DeployShare -UncPath $remoteUncPath -User $Username -Pass $Password
 
-$syncDirs = @("backend", "web-app")
+$syncDirs = @("backend", "web-app", "client_download")
 
 Write-Host ""
 Write-Host "=========================================="

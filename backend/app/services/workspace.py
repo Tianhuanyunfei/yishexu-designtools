@@ -40,7 +40,13 @@ class WorkspaceStore:
 
     def _ensure_manifest(self):
         if not self.manifest_path.exists():
-            self._write({'projects': {}, 'files': {}, 'versions': {}, 'locks': {}})
+            self._write({'projects': {}, 'files': {}, 'versions': {}, 'locks': {}, 'directories': {}})
+            return
+        # 兼容旧数据：早期 manifest 没有独立的目录记录。
+        data = self._read()
+        if 'directories' not in data:
+            data['directories'] = {}
+            self._write(data)
 
     def _read(self):
         with self.manifest_path.open('r', encoding='utf-8') as stream:
@@ -127,6 +133,18 @@ class WorkspaceStore:
                     if '/' in remaining:
                         directories.add(remaining.split('/', 1)[0])
 
+            # 显式创建的（可能为空的）目录同样要出现在当前层的目录列表中。
+            prefix = f'{normalized_parent}/' if normalized_parent else ''
+            for directory in data.get('directories', {}).values():
+                if directory['project_id'] != project_id or directory.get('deleted_at'):
+                    continue
+                path = directory['relative_path']
+                if path == normalized_parent or not path.startswith(prefix):
+                    continue
+                remaining = path[len(prefix):]
+                if remaining:
+                    directories.add(remaining.split('/', 1)[0])
+
             for name in directories:
                 items.append({
                     'id': f'directory:{normalized_parent}/{name}',
@@ -135,6 +153,79 @@ class WorkspaceStore:
                     'is_directory': True,
                 })
             return sorted(items, key=lambda item: (not item['is_directory'], item['name'].lower()))
+
+    def list_directories(self, project_id, user_id):
+        """返回项目内的全部目录路径（扁平列表），供前端构建目录树。"""
+        if not self.get_project(project_id, user_id):
+            return None
+        with self._lock:
+            data = self._read()
+            directories = set()
+            for file_entry in data['files'].values():
+                if file_entry['project_id'] != project_id or file_entry.get('deleted_at'):
+                    continue
+                relative_path = file_entry['relative_path'].replace('\\', '/').strip('/')
+                parts = relative_path.split('/')
+                # 逐级累积父目录，例如 a/b/c.txt 会产生 a 与 a/b。
+                for index in range(1, len(parts)):
+                    directories.add('/'.join(parts[:index]))
+            # 显式创建的目录（含空目录）也要进入目录树。
+            for directory in data.get('directories', {}).values():
+                if directory['project_id'] != project_id or directory.get('deleted_at'):
+                    continue
+                path = directory['relative_path']
+                parts = path.split('/')
+                for index in range(1, len(parts) + 1):
+                    directories.add('/'.join(parts[:index]))
+            return sorted(directories)
+
+    def create_directory(self, project_id, user_id, relative_path):
+        project = self.get_project(project_id, user_id)
+        if not project or project['members'].get(user_id) not in ('owner', 'admin', 'editor'):
+            return 'forbidden'
+        normalized_path = relative_path.replace('\\', '/').strip('/')
+        parts = normalized_path.split('/')
+        if not normalized_path or any(part in ('', '.', '..') for part in parts):
+            return 'invalid_path'
+        with self._lock:
+            data = self._read()
+            occupied = any(
+                item['project_id'] == project_id
+                and not item.get('deleted_at')
+                and item['relative_path'] == normalized_path
+                for item in data['files'].values()
+            )
+            if occupied:
+                return 'exists'
+            entry = next((
+                item for item in data['directories'].values()
+                if item['project_id'] == project_id and item['relative_path'] == normalized_path
+            ), None)
+            now = self._now()
+            if entry and not entry.get('deleted_at'):
+                return 'exists'
+            if entry:
+                # 目录曾在回收站中，重建时直接复用原记录。
+                entry['deleted_at'] = None
+                entry.pop('deleted_by', None)
+                entry['updated_by'] = user_id
+                entry['updated_at'] = now
+                self._write(data)
+                return 'success'
+            directory_id = str(uuid.uuid4())
+            data['directories'][directory_id] = {
+                'id': directory_id,
+                'project_id': project_id,
+                'relative_path': normalized_path,
+                'name': os.path.basename(normalized_path),
+                'created_by': user_id,
+                'created_at': now,
+                'updated_by': user_id,
+                'updated_at': now,
+                'deleted_at': None,
+            }
+            self._write(data)
+            return 'success'
 
     def save_file(self, project_id, user_id, relative_path, content, base_version=None, lock_token=None):
         project = self.get_project(project_id, user_id)
@@ -428,6 +519,7 @@ class WorkspaceStore:
             if lock and lock['user_id'] != user_id:
                 return 'locked'
             data['locks'].pop(file_id, None)
+            # 删除进入回收站：仅打标记并保留版本文件，可恢复或彻底删除。
             file_entry['deleted_at'] = self._now()
             file_entry['deleted_by'] = user_id
             self._write(data)
@@ -448,19 +540,198 @@ class WorkspaceStore:
                 and not item.get('deleted_at')
                 and item['relative_path'].startswith(prefix)
             ]
-            if not targets:
+            # 目录本身（含空目录）以及所有已被删文件的子目录记录也要一并移入回收站。
+            directory_targets = [
+                item for item in data['directories'].values()
+                if item['project_id'] == project_id
+                and not item.get('deleted_at')
+                and (item['relative_path'] == normalized_path or item['relative_path'].startswith(prefix))
+            ]
+            if not targets and not directory_targets:
                 return 'not_found'
             for item in targets:
                 lock = data['locks'].get(item['id'])
                 if lock and lock['user_id'] != user_id:
                     return 'locked'
             now = self._now()
+            # 删除进入回收站：目录下所有文件与目录统一打标记，保留版本文件。
             for item in targets:
                 data['locks'].pop(item['id'], None)
                 item['deleted_at'] = now
                 item['deleted_by'] = user_id
+            for item in directory_targets:
+                item['deleted_at'] = now
+                item['deleted_by'] = user_id
             self._write(data)
             return 'success'
+
+    def list_trash(self, project_id, user_id):
+        """返回项目回收站中的文件与目录，按删除时间从新到旧排列。"""
+        if not self.get_project(project_id, user_id):
+            return None
+        with self._lock:
+            data = self._read()
+            files = [
+                {**item, 'is_directory': False}
+                for item in data['files'].values()
+                if item['project_id'] == project_id and item.get('deleted_at')
+            ]
+            directories = [
+                {**item, 'is_directory': True}
+                for item in data.get('directories', {}).values()
+                if item['project_id'] == project_id and item.get('deleted_at')
+            ]
+        # 父目录也在回收站时只保留最外层目录，避免同一棵子树被拆成多行。
+        deleted_paths = {item['relative_path'] for item in directories}
+
+        def has_deleted_ancestor(path):
+            parts = path.split('/')
+            return any('/'.join(parts[:index]) in deleted_paths for index in range(1, len(parts)))
+
+        visible_files = [item for item in files if not has_deleted_ancestor(item['relative_path'])]
+        top_directories = [item for item in directories if not has_deleted_ancestor(item['relative_path'])]
+        return sorted(visible_files + top_directories, key=lambda item: item['deleted_at'], reverse=True)
+
+    def restore_entry(self, entry_id, user_id):
+        """从回收站恢复文件或目录（目录会连同其子树一起恢复）。"""
+        with self._lock:
+            data = self._read()
+            file_entry = data['files'].get(entry_id)
+            if file_entry:
+                if not file_entry.get('deleted_at'):
+                    return 'not_found'
+                if not self._can_delete(data, file_entry['project_id'], user_id):
+                    return 'forbidden'
+                # 原路径已被新文件占用时不允许恢复，避免同名冲突。
+                conflict = next((
+                    item for item in data['files'].values()
+                    if item['project_id'] == file_entry['project_id']
+                    and item['relative_path'] == file_entry['relative_path']
+                    and not item.get('deleted_at')
+                ), None)
+                if conflict:
+                    return 'conflict'
+                file_entry['deleted_at'] = None
+                file_entry.pop('deleted_by', None)
+                file_entry['updated_by'] = user_id
+                file_entry['updated_at'] = self._now()
+                self._write(data)
+                return 'success'
+
+            directory = data.get('directories', {}).get(entry_id)
+            if not directory or not directory.get('deleted_at'):
+                return 'not_found'
+            if not self._can_delete(data, directory['project_id'], user_id):
+                return 'forbidden'
+            project_id = directory['project_id']
+            path = directory['relative_path']
+            prefix = f'{path}/'
+            conflict = next((
+                item for item in data['files'].values()
+                if item['project_id'] == project_id
+                and not item.get('deleted_at')
+                and (item['relative_path'] == path or item['relative_path'].startswith(prefix))
+            ), None) or next((
+                item for item in data['directories'].values()
+                if item['id'] != entry_id
+                and item['project_id'] == project_id
+                and not item.get('deleted_at')
+                and (item['relative_path'] == path or item['relative_path'].startswith(prefix))
+            ), None)
+            if conflict:
+                return 'conflict'
+            now = self._now()
+            for item in data['directories'].values():
+                if item['project_id'] != project_id or not item.get('deleted_at'):
+                    continue
+                if item['id'] == entry_id or item['relative_path'].startswith(prefix):
+                    item['deleted_at'] = None
+                    item.pop('deleted_by', None)
+                    item['updated_by'] = user_id
+                    item['updated_at'] = now
+            for item in data['files'].values():
+                if item['project_id'] != project_id or not item.get('deleted_at'):
+                    continue
+                if item['relative_path'].startswith(prefix):
+                    item['deleted_at'] = None
+                    item.pop('deleted_by', None)
+                    item['updated_by'] = user_id
+                    item['updated_at'] = now
+            self._write(data)
+            return 'success'
+
+    def purge_entry(self, entry_id, user_id):
+        """从回收站彻底删除文件或目录（目录会连同其子树一起清除）。"""
+        with self._lock:
+            data = self._read()
+            file_entry = data['files'].get(entry_id)
+            if file_entry:
+                if not file_entry.get('deleted_at'):
+                    return 'not_found'
+                if not self._can_delete(data, file_entry['project_id'], user_id):
+                    return 'forbidden'
+                project_id = file_entry['project_id']
+                self._remove_files(data, {entry_id})
+                self._write(data)
+                self._remove_versions_on_disk(project_id, {entry_id})
+                return 'success'
+
+            directory = data.get('directories', {}).get(entry_id)
+            if not directory or not directory.get('deleted_at'):
+                return 'not_found'
+            if not self._can_delete(data, directory['project_id'], user_id):
+                return 'forbidden'
+            project_id = directory['project_id']
+            prefix = f"{directory['relative_path']}/"
+            file_ids = {
+                item['id'] for item in data['files'].values()
+                if item['project_id'] == project_id and item['relative_path'].startswith(prefix)
+            }
+            for directory_id in [
+                item['id'] for item in data['directories'].values()
+                if item['project_id'] == project_id
+                and (item['id'] == entry_id or item['relative_path'].startswith(prefix))
+            ]:
+                data['directories'].pop(directory_id, None)
+            self._remove_files(data, file_ids)
+            self._write(data)
+            self._remove_versions_on_disk(project_id, file_ids)
+            return 'success'
+
+    def _remove_files(self, data, file_ids):
+        for file_id in file_ids:
+            data['files'].pop(file_id, None)
+            data['locks'].pop(file_id, None)
+        for version_id in [
+            item['id'] for item in data['versions'].values() if item['file_id'] in file_ids
+        ]:
+            data['versions'].pop(version_id, None)
+
+    def _remove_versions_on_disk(self, project_id, file_ids):
+        for file_id in file_ids:
+            shutil.rmtree(self.storage / project_id / 'versions' / file_id, ignore_errors=True)
+
+    def empty_trash(self, project_id, user_id):
+        with self._lock:
+            data = self._read()
+            if not self._can_delete(data, project_id, user_id):
+                return 'forbidden'
+            target_ids = {
+                item['id'] for item in data['files'].values()
+                if item['project_id'] == project_id and item.get('deleted_at')
+            }
+            directory_ids = [
+                item['id'] for item in data.get('directories', {}).values()
+                if item['project_id'] == project_id and item.get('deleted_at')
+            ]
+            if not target_ids and not directory_ids:
+                return 0
+            for directory_id in directory_ids:
+                data['directories'].pop(directory_id, None)
+            self._remove_files(data, target_ids)
+            self._write(data)
+            self._remove_versions_on_disk(project_id, target_ids)
+            return len(target_ids) + len(directory_ids)
 
     def delete_project(self, project_id, user_id):
         with self._lock:
@@ -470,14 +741,12 @@ class WorkspaceStore:
                 return 'not_found'
             if project['members'].get(user_id) != 'owner':
                 return 'forbidden'
-            file_ids = [item['id'] for item in data['files'].values() if item['project_id'] == project_id]
-            for file_id in file_ids:
-                data['files'].pop(file_id, None)
-                data['locks'].pop(file_id, None)
-            for version_id in [
-                item['id'] for item in data['versions'].values() if item['file_id'] in file_ids
+            file_ids = {item['id'] for item in data['files'].values() if item['project_id'] == project_id}
+            for directory_id in [
+                item['id'] for item in data.get('directories', {}).values() if item['project_id'] == project_id
             ]:
-                data['versions'].pop(version_id, None)
+                data['directories'].pop(directory_id, None)
+            self._remove_files(data, file_ids)
             data['projects'].pop(project_id, None)
             self._write(data)
             shutil.rmtree(self.storage / project_id, ignore_errors=True)

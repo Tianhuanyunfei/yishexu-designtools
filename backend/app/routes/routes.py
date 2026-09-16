@@ -59,6 +59,17 @@ def get_current_user_id():
 # 注册所有路由
 def register_routes(app):
     # 新文件中心：项目与版本化文件接口
+    @app.route('/api/client/download', methods=['GET'])
+    def client_download_api():
+        client_path = os.path.abspath(os.path.join(Config.PROJECT_ROOT, '..', 'client_download', '羿射旭本地文件客户端.exe'))
+        if not os.path.isfile(client_path):
+            return jsonify({'status': 'error', 'message': '本地客户端安装包不存在'}), 404
+        return send_file(
+            client_path,
+            as_attachment=True,
+            download_name='羿射旭本地文件客户端.exe',
+        )
+
     @app.route('/api/workspace/projects', methods=['GET'])
     def workspace_projects_api():
         user_id = get_current_user_id()
@@ -101,6 +112,16 @@ def register_routes(app):
         if files is None:
             return jsonify({'status': 'error', 'message': '无权访问项目'}), 403
         return jsonify({'status': 'success', 'files': files})
+
+    @app.route('/api/workspace/projects/<project_id>/directories', methods=['GET'])
+    def workspace_directories_api(project_id):
+        user_id = get_current_user_id()
+        if not user_id:
+            return jsonify({'status': 'error', 'message': '需要登录'}), 401
+        directories = workspace_store.list_directories(project_id, user_id)
+        if directories is None:
+            return jsonify({'status': 'error', 'message': '无权访问项目'}), 403
+        return jsonify({'status': 'success', 'directories': directories})
 
     @app.route('/api/workspace/files/<file_id>/content', methods=['GET'])
     def workspace_download_api(file_id):
@@ -293,6 +314,22 @@ def register_routes(app):
             return jsonify({'status': 'error', 'message': '文件已被其他用户检出，无法删除'}), 423
         return jsonify({'status': 'success'})
 
+    @app.route('/api/workspace/projects/<project_id>/directories', methods=['POST'])
+    def workspace_create_directory_api(project_id):
+        user_id = get_current_user_id()
+        if not user_id:
+            return jsonify({'status': 'error', 'message': '需要登录'}), 401
+        data = request.get_json(silent=True) or {}
+        relative_path = str(data.get('path', '')).strip()
+        status = workspace_store.create_directory(project_id, user_id, relative_path)
+        if status == 'invalid_path':
+            return jsonify({'status': 'error', 'message': '目录名称不合法'}), 400
+        if status == 'exists':
+            return jsonify({'status': 'error', 'message': '同名文件或目录已存在'}), 409
+        if status == 'forbidden':
+            return jsonify({'status': 'error', 'message': '当前角色无权新建目录'}), 403
+        return jsonify({'status': 'success'}), 201
+
     @app.route('/api/workspace/projects/<project_id>/directories', methods=['DELETE'])
     def workspace_delete_directory_api(project_id):
         user_id = get_current_user_id()
@@ -310,6 +347,52 @@ def register_routes(app):
         if status == 'locked':
             return jsonify({'status': 'error', 'message': '目录中存在被其他用户检出的文件，无法删除'}), 423
         return jsonify({'status': 'success'})
+
+    @app.route('/api/workspace/projects/<project_id>/trash', methods=['GET'])
+    def workspace_trash_api(project_id):
+        user_id = get_current_user_id()
+        if not user_id:
+            return jsonify({'status': 'error', 'message': '需要登录'}), 401
+        files = workspace_store.list_trash(project_id, user_id)
+        if files is None:
+            return jsonify({'status': 'error', 'message': '无权访问项目'}), 403
+        return jsonify({'status': 'success', 'files': files})
+
+    @app.route('/api/workspace/files/<file_id>/restore', methods=['POST'])
+    def workspace_restore_file_api(file_id):
+        user_id = get_current_user_id()
+        if not user_id:
+            return jsonify({'status': 'error', 'message': '需要登录'}), 401
+        status = workspace_store.restore_entry(file_id, user_id)
+        if status == 'not_found':
+            return jsonify({'status': 'error', 'message': '回收站中不存在该文件或目录'}), 404
+        if status == 'forbidden':
+            return jsonify({'status': 'error', 'message': '当前角色无权恢复'}), 403
+        if status == 'conflict':
+            return jsonify({'status': 'error', 'message': '原路径已存在同名文件，请先处理后再恢复'}), 409
+        return jsonify({'status': 'success'})
+
+    @app.route('/api/workspace/files/<file_id>/purge', methods=['DELETE'])
+    def workspace_purge_file_api(file_id):
+        user_id = get_current_user_id()
+        if not user_id:
+            return jsonify({'status': 'error', 'message': '需要登录'}), 401
+        status = workspace_store.purge_entry(file_id, user_id)
+        if status == 'not_found':
+            return jsonify({'status': 'error', 'message': '回收站中不存在该文件或目录'}), 404
+        if status == 'forbidden':
+            return jsonify({'status': 'error', 'message': '当前角色无权彻底删除'}), 403
+        return jsonify({'status': 'success'})
+
+    @app.route('/api/workspace/projects/<project_id>/trash', methods=['DELETE'])
+    def workspace_empty_trash_api(project_id):
+        user_id = get_current_user_id()
+        if not user_id:
+            return jsonify({'status': 'error', 'message': '需要登录'}), 401
+        result = workspace_store.empty_trash(project_id, user_id)
+        if result == 'forbidden':
+            return jsonify({'status': 'error', 'message': '当前角色无权清空回收站'}), 403
+        return jsonify({'status': 'success', 'count': result})
 
     @app.route('/api/workspace/projects/<project_id>', methods=['DELETE'])
     def workspace_delete_project_api(project_id):
