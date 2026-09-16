@@ -460,7 +460,7 @@ def handle_text(row, msp, layer, color, input_file, entity_type, line_num):
                     "rotation": text_rotation,
                     "color": color,
                 }
-            ).set_pos(text_location)
+            ).set_placement(text_location)
         else:  # MTEXT
             msp.add_mtext(
                 text_content,

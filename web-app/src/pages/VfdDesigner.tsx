@@ -1,143 +1,537 @@
-import React, { useState, useEffect } from 'react';
-import { Zap, FolderOpen, Download } from 'lucide-react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { Zap, Download, Upload, FileImage, FileText, Save, RefreshCw } from 'lucide-react';
 import { useToast } from '../components/Toast';
 
+/* ------------------------------------------------------------------ 类型 */
+
+interface Spec {
+  bore: number;
+  axis: number;
+  label: string;
+  available: boolean;
+}
+
+interface ParamItem {
+  part: string;
+  name: string;
+  value: number;
+  note: string;
+}
+
+interface LineEntity {
+  type: 'LINE';
+  layer: string;
+  start: [number, number];
+  end: [number, number];
+}
+
+interface ArcEntity {
+  type: 'ARC';
+  layer: string;
+  center: [number, number];
+  radius: number;
+  start_angle: number;
+  end_angle: number;
+}
+
+interface CircleEntity {
+  type: 'CIRCLE';
+  layer: string;
+  center: [number, number];
+  radius: number;
+}
+
+interface TextEntity {
+  type: 'TEXT' | 'MTEXT';
+  layer: string;
+  text: string;
+  position: [number, number];
+  height: number;
+  rotation: number;
+}
+
+interface DimEntity {
+  type: 'DIMENSION';
+  layer: string;
+  dim_type: 'LINEAR' | 'RADIUS';
+  value: number;
+  override: string;
+  angle: number;
+  p1?: [number, number];
+  p2?: [number, number];
+  center?: [number, number];
+  location: [number, number];
+}
+
+type Entity = LineEntity | ArcEntity | CircleEntity | TextEntity | DimEntity;
+
+interface Preview {
+  entities: Entity[];
+  axial: Record<string, number>;
+  /** 未应用覆盖时的推导值，供启用覆盖的行显示被划掉的计算值 */
+  axial_base: Record<string, number>;
+  radial: Record<string, number>;
+  bbox: { min_x: number; min_y: number; max_x: number; max_y: number };
+  layers: string[];
+}
+
+/* -------------------------------------------------------------- 预览配色 */
+
+const LAYER_COLORS: Record<string, string> = {
+  '粗实线层': '#1f2937',
+  '细实线层': '#6b7280',
+  '中心线层': '#dc2626',
+  '虚线层': '#a855f7',
+  '尺寸线层': '#16a34a',
+  '预览尺寸层': '#2563eb',
+};
+
+const colorOf = (layer: string) => LAYER_COLORS[layer] || '#9ca3af';
+
+/** 设计尺寸：由设计位移与零件尺寸推导，不落盘，仅供查看 */
+const DERIVED_FIELDS: Array<{ key: string; label: string; note: string; overridable?: boolean; input?: boolean }> = [
+  { key: 'limit_displacement', label: '极限位移', note: '设计位移 < 100 时 ×1.5，否则 ×1.2' },
+  { key: 'clearance', label: '腔体余量', note: '活塞运动到极限时与前盖或导向套的距离', input: true },
+  { key: 'chamber', label: '前腔/后腔长度', note: '极限位移 + 腔体余量' },
+  { key: 'cavity_length', label: '腔体长度', note: '前腔长 + 活塞宽 + 后腔长' },
+  { key: 'lug_to_cover', label: '前吊耳至前盖', note: '防尘罩长度，公式待定（暂用常量 140）', overridable: true },
+  { key: 'barrel_length', label: '前缸筒长度', note: '台阶端至前缸筒后端' },
+  { key: 'rod_overhang', label: '轴后端伸出长', note: '前腔/后腔长度 − 5', overridable: true },
+  { key: 'rod_to_rear_cover', label: '轴后端到后盖距离', note: '极限位移 + 25 + 10', overridable: true },
+  { key: 'rear_barrel_length', label: '后缸筒长度', note: '轴后端伸出长 + 轴后端到后盖距离 + 后盖螺纹长度' },
+  { key: 'rod_length', label: '轴的总长', note: '轴端螺纹里端至轴后端面' },
+  { key: 'install_length', label: '安装距离', note: '前吊耳中心至后吊耳中心' },
+];
+
+/** 圆弧离散成折线点串（DXF 逆时针角度 → SVG 坐标，Y 取反） */
+const arcPoints = (cx: number, cy: number, radius: number, a0: number, a1: number) => {
+  const start = a0;
+  let end = a1;
+  while (end < start) end += 360;
+  const steps = Math.max(8, Math.ceil((end - start) / 5));
+  const pts: string[] = [];
+  for (let i = 0; i <= steps; i++) {
+    const a = ((start + ((end - start) * i) / steps) * Math.PI) / 180;
+    pts.push(`${cx + radius * Math.cos(a)},${-(cy + radius * Math.sin(a))}`);
+  }
+  return pts.join(' ');
+};
+
+/** 尺寸文字：DXF 的 %%C 表示直径符号 */
+const dimText = (entity: DimEntity) => {
+  const raw = entity.override && entity.override !== '<>'
+    ? entity.override
+    : String(Math.round(entity.value * 1000) / 1000);
+  return raw.replace(/%%C|%%c/g, 'Ø');
+};
+
+/* ------------------------------------------------------------ 结构图预览 */
+
+const StructurePreview: React.FC<{ preview: Preview }> = ({ preview }) => {
+  const { bbox, entities } = preview;
+
+  const width = Math.max(bbox.max_x - bbox.min_x, 1);
+  const height = Math.max(bbox.max_y - bbox.min_y, 1);
+  const pad = Math.max(width, height) * 0.06;
+  const viewBox = `${bbox.min_x - pad} ${-bbox.max_y - pad} ${width + 2 * pad} ${height + 2 * pad}`;
+  const fontSize = Math.max(width, height) / 70;
+
+  return (
+    <svg
+      className="w-full bg-white border border-gray-200 rounded-lg"
+      style={{ height: 460 }}
+      viewBox={viewBox}
+      preserveAspectRatio="xMidYMid meet"
+    >
+      {entities.map((entity, index) => {
+        const stroke = colorOf(entity.layer);
+
+        if (entity.type === 'LINE') {
+          return (
+            <line
+              key={index}
+              x1={entity.start[0]}
+              y1={-entity.start[1]}
+              x2={entity.end[0]}
+              y2={-entity.end[1]}
+              stroke={stroke}
+              strokeWidth={entity.layer === '粗实线层' ? fontSize * 0.09 : fontSize * 0.05}
+            />
+          );
+        }
+
+        if (entity.type === 'CIRCLE') {
+          return (
+            <circle
+              key={index}
+              cx={entity.center[0]}
+              cy={-entity.center[1]}
+              r={entity.radius}
+              fill="none"
+              stroke={stroke}
+              strokeWidth={fontSize * 0.06}
+            />
+          );
+        }
+
+        if (entity.type === 'ARC') {
+          return (
+            <polyline
+              key={index}
+              points={arcPoints(entity.center[0], entity.center[1], entity.radius, entity.start_angle, entity.end_angle)}
+              fill="none"
+              stroke={stroke}
+              strokeWidth={fontSize * 0.06}
+            />
+          );
+        }
+
+        // TEXT / MTEXT：指引线注释等文字
+        if (entity.type === 'TEXT' || entity.type === 'MTEXT') {
+          return (
+            <text
+              key={index}
+              x={entity.position[0]}
+              y={-entity.position[1]}
+              fill={stroke}
+              fontSize={entity.height || fontSize}
+              textAnchor="start"
+              transform={entity.rotation ? `rotate(${-entity.rotation} ${entity.position[0]} ${-entity.position[1]})` : undefined}
+            >
+              {entity.text}
+            </text>
+          );
+        }
+
+        // 余下分支只处理尺寸实体
+        if (entity.type !== 'DIMENSION') return null;
+
+        // DIMENSION：预览只画尺寸线与尺寸文字
+        if (entity.dim_type === 'RADIUS' && entity.center) {
+          const a = (entity.angle * Math.PI) / 180;
+          const ex = entity.center[0] + entity.value * Math.cos(a);
+          const ey = entity.center[1] + entity.value * Math.sin(a);
+          return (
+            <g key={index}>
+              <line
+                x1={entity.center[0]}
+                y1={-entity.center[1]}
+                x2={ex}
+                y2={-ey}
+                stroke={stroke}
+                strokeWidth={fontSize * 0.05}
+              />
+              <text x={ex} y={-ey - fontSize * 0.4} fill={stroke} fontSize={fontSize} textAnchor="middle">
+                {dimText(entity)}
+              </text>
+            </g>
+          );
+        }
+
+        const p1 = entity.p1 || entity.location;
+        const p2 = entity.p2 || entity.location;
+        const loc = entity.location;
+        const isVertical = Math.abs(entity.angle - 90) < 1e-6;
+
+        const x1 = isVertical ? loc[0] : p1[0];
+        const y1 = isVertical ? p1[1] : loc[1];
+        const x2 = isVertical ? loc[0] : p2[0];
+        const y2 = isVertical ? p2[1] : loc[1];
+
+        // 尺寸界线：自被测点引至尺寸线
+        const extLines: [number, number, number, number][] = isVertical
+          ? [
+              [p1[0], p1[1], loc[0], p1[1]],
+              [p2[0], p2[1], loc[0], p2[1]],
+            ]
+          : [
+              [p1[0], p1[1], p1[0], loc[1]],
+              [p2[0], p2[1], p2[0], loc[1]],
+            ];
+
+        return (
+          <g key={index}>
+            {extLines.map(([ax, ay, bx, by], i) => (
+              <line
+                key={`ext${i}`}
+                x1={ax}
+                y1={-ay}
+                x2={bx}
+                y2={-by}
+                stroke={stroke}
+                strokeWidth={fontSize * 0.035}
+              />
+            ))}
+            <line
+              x1={x1}
+              y1={-y1}
+              x2={x2}
+              y2={-y2}
+              stroke={stroke}
+              strokeWidth={fontSize * 0.05}
+            />
+            <text
+              x={(x1 + x2) / 2}
+              y={-((y1 + y2) / 2) - fontSize * 0.35}
+              fill={stroke}
+              fontSize={fontSize}
+              textAnchor="middle"
+            >
+              {dimText(entity)}
+            </text>
+          </g>
+        );
+      })}
+    </svg>
+  );
+};
+
+/* ------------------------------------------------------------------ 页面 */
+
 const VfdDesigner: React.FC = () => {
-  // 从localStorage加载初始状态
-  const loadInitialState = () => {
+  const { showToast } = useToast();
+
+  const [projectName, setProjectName] = useState(() => localStorage.getItem('vfd_projectName') || '');
+  const [force, setForce] = useState(() => localStorage.getItem('vfd_force') || '');
+  const [displacement, setDisplacement] = useState(() => localStorage.getItem('vfd_displacement') || '');
+  const [clearance, setClearance] = useState(() => localStorage.getItem('vfd_clearance') || '30');
+
+  const [specs, setSpecs] = useState<Spec[]>([]);
+  const [bore, setBore] = useState<number | null>(null);
+  const [axis, setAxis] = useState<number | null>(null);
+
+  const [params, setParams] = useState<ParamItem[]>([]);
+  const [values, setValues] = useState<Record<string, number>>({});
+  const [originalValues, setOriginalValues] = useState<Record<string, number>>({});
+
+  const [preview, setPreview] = useState<Preview | null>(null);
+  const [busy, setBusy] = useState(false);
+  const firstLoad = useRef(true);
+
+  // 可覆盖设计尺寸：on 为是否启用覆盖，value 为覆盖值文本（空串表示未填）
+  const [overrides, setOverrides] = useState<Record<string, { on: boolean; value: string }>>({});
+
+  useEffect(() => { localStorage.setItem('vfd_projectName', projectName); }, [projectName]);
+  useEffect(() => { localStorage.setItem('vfd_force', force); }, [force]);
+  useEffect(() => { localStorage.setItem('vfd_displacement', displacement); }, [displacement]);
+  useEffect(() => { localStorage.setItem('vfd_clearance', clearance); }, [clearance]);
+
+  const modelName = `VFD-${force || '?'}-${displacement || '?'}`;
+
+  /* --- 规格库 --- */
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await fetch('/api/vfd/specs');
+        const data = await res.json();
+        if (data.status !== 'success') throw new Error(data.message || '读取规格表失败');
+        const list: Spec[] = data.specs || [];
+        setSpecs(list);
+        const first = list.find(s => s.available) || list[0];
+        if (first) { setBore(first.bore); setAxis(first.axis); }
+      } catch (error) {
+        showToast(error instanceof Error ? error.message : '读取规格表失败', 'error');
+      }
+    })();
+  }, [showToast]);
+
+  const axes = useMemo(
+    () => specs.filter(s => s.bore === bore).map(s => s.axis),
+    [specs, bore]
+  );
+
+  /* --- 零件尺寸表 --- */
+  useEffect(() => {
+    if (bore === null || axis === null) return;
+    (async () => {
+      try {
+        const res = await fetch(`/api/vfd/params?bore=${bore}&axis=${axis}`);
+        const data = await res.json();
+        if (data.status !== 'success') throw new Error(data.message || '读取零件尺寸失败');
+        const list: ParamItem[] = data.params || [];
+        const dict: Record<string, number> = {};
+        list.forEach(item => { dict[item.name] = item.value; });
+        setParams(list);
+        setValues(dict);
+        setOriginalValues(dict);
+        firstLoad.current = true;
+      } catch (error) {
+        setParams([]);
+        setValues({});
+        setOriginalValues({});
+        showToast(error instanceof Error ? error.message : '读取零件尺寸失败', 'error');
+      }
+    })();
+  }, [bore, axis, showToast]);
+
+  /* --- 覆盖值：仅取已启用且有输入值的项，传给后端参与全部下游推导 --- */
+  const overridePayload = useMemo(() => {
+    const out: Record<string, number> = {};
+    Object.entries(overrides).forEach(([key, item]) => {
+      if (!item.on) return;
+      const n = Number(item.value);
+      if (item.value !== '' && Number.isFinite(n)) out[key] = n;
+    });
+    return out;
+  }, [overrides]);
+
+  /* --- 改尺寸立即刷新预览（防抖） --- */
+  useEffect(() => {
+    if (!Object.keys(values).length) { setPreview(null); return; }
+    const timer = setTimeout(async () => {
+      try {
+        const res = await fetch('/api/vfd/preview', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ values, displacement, clearance, overrides: overridePayload }),
+        });
+        const data = await res.json();
+        if (data.status !== 'success') throw new Error(data.message || '生成预览失败');
+        setPreview(data.preview);
+      } catch (error) {
+        showToast(error instanceof Error ? error.message : '生成预览失败', 'error');
+      }
+    }, firstLoad.current ? 0 : 400);
+    firstLoad.current = false;
+    return () => clearTimeout(timer);
+  }, [values, displacement, clearance, overridePayload, showToast]);
+
+  const changedKeys = useMemo(
+    () => Object.keys(values).filter(k => originalValues[k] !== undefined && values[k] !== originalValues[k]),
+    [values, originalValues]
+  );
+
+  const partGroups = useMemo(() => {
+    const groups: Array<{ part: string; items: ParamItem[] }> = [];
+    params.forEach(item => {
+      const last = groups[groups.length - 1];
+      if (last && last.part === item.part) last.items.push(item);
+      else groups.push({ part: item.part, items: [item] });
+    });
+    return groups;
+  }, [params]);
+
+  const handleValueChange = (name: string, text: string) => {
+    setValues(prev => ({ ...prev, [name]: text === '' ? 0 : Number(text) }));
+  };
+
+  /* --- 覆盖开关与覆盖值 --- */
+  const setOverride = (key: string, patch: { on?: boolean; value?: string }) => {
+    setOverrides(prev => {
+      const cur = prev[key] ?? { on: false, value: '' };
+      return { ...prev, [key]: { ...cur, ...patch } };
+    });
+  };
+
+  /* --- 保存零件尺寸 --- */
+  const handleSaveParams = async () => {
+    if (bore === null || axis === null) return;
     try {
-      const savedProjectName = localStorage.getItem('vfd_projectName') || '';
-      const savedProjectFolder = localStorage.getItem('vfd_projectFolder') || '';
-      const savedSelectedModel = localStorage.getItem('vfd_selectedModel') || '';
-      const savedParameters = localStorage.getItem('vfd_parameters');
-      
-      return {
-        projectName: savedProjectName,
-        projectFolder: savedProjectFolder,
-        selectedModel: savedSelectedModel,
-        parameters: savedParameters ? JSON.parse(savedParameters) : {
-          diameter: '',
-          stroke: '',
-          force: '',
-          damping: ''
-        }
-      };
+      setBusy(true);
+      const res = await fetch('/api/vfd/params', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ bore, axis, values }),
+      });
+      const data = await res.json();
+      if (data.status !== 'success') throw new Error(data.message || '保存失败');
+      const list: ParamItem[] = data.params || [];
+      const dict: Record<string, number> = {};
+      list.forEach(item => { dict[item.name] = item.value; });
+      setParams(list);
+      setValues(dict);
+      setOriginalValues(dict);
+      showToast('零件尺寸已保存', 'success');
     } catch (error) {
-      console.error('加载VFD设计器初始状态失败:', error);
-      return {
-        projectName: '',
-        projectFolder: '',
-        selectedModel: '',
-        parameters: {
-          diameter: '',
-          stroke: '',
-          force: '',
-          damping: ''
-        }
-      };
+      showToast(error instanceof Error ? error.message : '保存失败', 'error');
+    } finally {
+      setBusy(false);
     }
   };
-  
-  const initialState = loadInitialState();
-  
-  const [projectName, setProjectName] = useState(initialState.projectName);
-  const [projectFolder, setProjectFolder] = useState(initialState.projectFolder);
-  const [selectedModel, setSelectedModel] = useState(initialState.selectedModel);
-  const { showToast } = useToast();
-  const [parameters, setParameters] = useState(initialState.parameters);
-  
-  // 监听状态变化并保存到localStorage
-  useEffect(() => {
-    localStorage.setItem('vfd_projectName', projectName);
-  }, [projectName]);
-  
-  useEffect(() => {
-    localStorage.setItem('vfd_projectFolder', projectFolder);
-  }, [projectFolder]);
-  
-  useEffect(() => {
-    localStorage.setItem('vfd_selectedModel', selectedModel);
-  }, [selectedModel]);
-  
-  useEffect(() => {
-    localStorage.setItem('vfd_parameters', JSON.stringify(parameters));
-  }, [parameters]);
 
-  const vfdModels = [
-    'VFD-100', 'VFD-150', 'VFD-200', 'VFD-250', 'VFD-300',
-    'VFD-350', 'VFD-400', 'VFD-450', 'VFD-500', 'VFD-550'
-  ];
-
-  const handleParameterChange = (field: string, value: string) => {
-    setParameters((prev: { [key: string]: string }) => ({
-      ...prev,
-      [field]: value
-    }));
-  };
-
-  const handleGenerateDrawings = async () => {
-    if (!selectedModel) {
-      showToast('请选择产品型号', 'error');
+  /* --- 生成结构图 DXF 并下载 --- */
+  const handleGenerateDrawing = async () => {
+    if (bore === null || axis === null) {
+      showToast('请先选择缸径与轴径', 'error');
       return;
     }
-    
     try {
-      // 调用后端API生成图纸
-      const response = await fetch('/api/vfd/design', {
+      setBusy(true);
+      const res = await fetch('/api/vfd/structure-dxf', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          projectName,
-          projectFolder,
-          selectedModel,
-          parameters
-        })
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ bore, axis, values, modelName, displacement, clearance, overrides: overridePayload }),
       });
-      
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.message || '生成图纸失败');
-      }
-      
-      const result = await response.json();
-      showToast('粘滞产品图纸生成成功！', 'success');
-      console.log('粘滞产品设计结果:', result);
+      const data = await res.json();
+      if (data.status !== 'success') throw new Error(data.message || '生成图纸失败');
+
+      const file = data.result;
+      const dl = await fetch(`/api/download/file?path=${encodeURIComponent(file.path)}`);
+      if (!dl.ok) throw new Error('文件下载失败');
+      const blob = await dl.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = file.name;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+      showToast('结构图生成完成', 'success');
     } catch (error) {
-      console.error('生成图纸错误:', error);
-      showToast(error instanceof Error ? error.message : '生成图纸失败，请检查网络连接', 'error');
+      showToast(error instanceof Error ? error.message : '生成图纸失败', 'error');
+    } finally {
+      setBusy(false);
     }
+  };
+
+  /* --- 导出 / 导入参数 --- */
+  const handleExport = () => {
+    const payload = { projectName, modelName, bore, axis, values };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${modelName}_参数.json`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    window.URL.revokeObjectURL(url);
+    showToast('参数已导出', 'success');
+  };
+
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleImport = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const data = JSON.parse(String(reader.result));
+        if (data.projectName !== undefined) setProjectName(data.projectName);
+        if (data.bore !== undefined && data.bore !== null) setBore(data.bore);
+        if (data.axis !== undefined && data.axis !== null) setAxis(data.axis);
+        if (data.values) setValues(prev => ({ ...prev, ...data.values }));
+        showToast('参数已导入', 'success');
+      } catch {
+        showToast('导入文件格式有误', 'error');
+      }
+    };
+    reader.readAsText(file);
+    event.target.value = '';
   };
 
   return (
     <div className="space-y-6">
-      {/* 页面标题 */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center space-x-3">
-          <Zap className="h-8 w-8 text-green-600" />
-          <h1 className="text-2xl font-bold text-gray-900">粘滞产品设计</h1>
-        </div>
-        <div className="flex space-x-3">
-          <button className="btn-secondary flex items-center space-x-2">
-            <FolderOpen className="h-4 w-4" />
-            <span>打开项目</span>
-          </button>
-          <button 
-            className="btn-primary flex items-center space-x-2"
-            onClick={handleGenerateDrawings}
-          >
-            <Download className="h-4 w-4" />
-            <span>生成图纸</span>
-          </button>
-        </div>
-      </div>
-
-      {/* 项目信息区域 */}
+      {/* 第一行：项目名称 + 操作按钮 */}
       <div className="card p-6">
-        <h2 className="text-lg font-semibold text-gray-900 mb-4">项目信息</h2>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <div>
+        <div className="flex flex-wrap items-end gap-4">
+          <div className="flex items-center space-x-3 mr-2">
+            <Zap className="h-8 w-8 text-green-600" />
+            <h1 className="text-2xl font-bold text-gray-900">粘滞阻尼器设计</h1>
+          </div>
+          <div className="flex-1 min-w-[240px]">
             <label className="form-label">项目名称</label>
             <input
               type="text"
@@ -147,126 +541,288 @@ const VfdDesigner: React.FC = () => {
               placeholder="请输入项目名称"
             />
           </div>
-          <div>
-            <label className="form-label">项目文件夹</label>
-            <div className="flex space-x-2">
-              <input
-                type="text"
-                className="input-field flex-1"
-                value={projectFolder}
-                onChange={(e) => setProjectFolder(e.target.value)}
-                placeholder="选择项目保存文件夹"
-              />
-              <button className="btn-secondary">
-                <FolderOpen className="h-4 w-4" />
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* 产品型号选择 */}
-      <div className="card p-6">
-        <h2 className="text-lg font-semibold text-gray-900 mb-4">产品型号选择</h2>
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-          {vfdModels.map(model => (
-            <button
-              key={model}
-              onClick={() => setSelectedModel(model)}
-              className={`p-3 rounded-lg border-2 transition-all duration-200 ${
-                selectedModel === model
-                  ? 'border-green-500 bg-green-50 text-green-700'
-                  : 'border-gray-300 hover:border-green-300'
-              }`}
-            >
-              {model}
+          <div className="flex flex-wrap gap-3">
+            <button className="btn-primary flex items-center space-x-2" onClick={handleGenerateDrawing} disabled={busy}>
+              <Download className="h-4 w-4" />
+              <span>生成图纸</span>
             </button>
-          ))}
-        </div>
-        {selectedModel && (
-          <div className="mt-4 p-3 bg-green-50 border border-green-200 rounded-lg">
-            <span className="text-green-700 font-medium">
-              已选择型号: {selectedModel}
-            </span>
+            <button
+              className="btn-secondary flex items-center space-x-2"
+              onClick={() => showToast('轮廓图接口待接入', 'info')}
+            >
+              <FileImage className="h-4 w-4" />
+              <span>生成轮廓图</span>
+            </button>
+            <button
+              className="btn-secondary flex items-center space-x-2"
+              onClick={() => showToast('材料单接口待接入', 'info')}
+            >
+              <FileText className="h-4 w-4" />
+              <span>生成材料单</span>
+            </button>
+            <button className="btn-secondary flex items-center space-x-2" onClick={handleExport}>
+              <Download className="h-4 w-4" />
+              <span>导出</span>
+            </button>
+            <button
+              className="btn-secondary flex items-center space-x-2"
+              onClick={() => fileInputRef.current?.click()}
+            >
+              <Upload className="h-4 w-4" />
+              <span>导入</span>
+            </button>
+            <input ref={fileInputRef} type="file" accept=".json" className="hidden" onChange={handleImport} />
           </div>
-        )}
+        </div>
       </div>
 
-      {/* 参数配置 */}
-      {selectedModel && (
-        <div className="card p-6">
-          <h2 className="text-lg font-semibold text-gray-900 mb-4">参数配置</h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div>
-              <label className="form-label">缸径(mm)</label>
-              <input
-                type="number"
-                className="input-field"
-                value={parameters.diameter}
-                onChange={(e) => handleParameterChange('diameter', e.target.value)}
-                placeholder="输入缸径尺寸"
-              />
-            </div>
-            <div>
-              <label className="form-label">行程(mm)</label>
-              <input
-                type="number"
-                className="input-field"
-                value={parameters.stroke}
-                onChange={(e) => handleParameterChange('stroke', e.target.value)}
-                placeholder="输入行程尺寸"
-              />
-            </div>
-            <div>
-              <label className="form-label">设计力(kN)</label>
-              <input
-                type="number"
-                className="input-field"
-                value={parameters.force}
-                onChange={(e) => handleParameterChange('force', e.target.value)}
-                placeholder="输入设计力"
-              />
-            </div>
-            <div>
-              <label className="form-label">阻尼系数</label>
-              <input
-                type="number"
-                className="input-field"
-                value={parameters.damping}
-                onChange={(e) => handleParameterChange('damping', e.target.value)}
-                placeholder="输入阻尼系数"
-              />
-            </div>
+      {/* 参数表区（每张表独占整个区域，点表头切换） */}
+      <div className="card overflow-hidden">
+        <div className="flex border-b border-gray-200 bg-gray-50">
+          <div className="px-6 py-3 text-sm font-semibold text-green-700 border-b-2 border-green-600 -mb-px bg-white">
+            参数表
           </div>
         </div>
-      )}
 
-      {/* 预览区域 */}
-      {selectedModel && (
-        <div className="card p-6">
-          <h2 className="text-lg font-semibold text-gray-900 mb-4">设计预览</h2>
-          <div className="bg-gray-100 rounded-lg p-8 text-center">
-            <Zap className="h-16 w-16 text-gray-400 mx-auto mb-4" />
-            <p className="text-gray-600">
-              粘滞阻尼器 {selectedModel} 设计预览
-            </p>
-            <div className="mt-4 grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-              <div>
-                <span className="font-semibold">缸径:</span> {parameters.diameter || '--'}mm
-              </div>
-              <div>
-                <span className="font-semibold">行程:</span> {parameters.stroke || '--'}mm
-              </div>
-              <div>
-                <span className="font-semibold">设计力:</span> {parameters.force || '--'}kN
-              </div>
-              <div>
-                <span className="font-semibold">阻尼系数:</span> {parameters.damping || '--'}
+        <div className="p-6 space-y-5">
+          {/* 型号：VFD-[力]-[设计位移] */}
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
+            <div>
+              <label className="form-label">力（kN）</label>
+              <input
+                type="number"
+                className="input-field"
+                value={force}
+                onChange={(e) => setForce(e.target.value)}
+                placeholder="如 1000"
+              />
+            </div>
+            <div>
+              <label className="form-label">设计位移（mm）</label>
+              <input
+                type="number"
+                className="input-field"
+                value={displacement}
+                onChange={(e) => setDisplacement(e.target.value)}
+                placeholder="如 30"
+              />
+            </div>
+            <div>
+              <label className="form-label">腔体余量（mm）</label>
+              <input
+                type="number"
+                className="input-field"
+                value={clearance}
+                onChange={(e) => setClearance(e.target.value)}
+                placeholder="如 30"
+              />
+            </div>
+            <div>
+              <label className="form-label">型号</label>
+              <div className="px-4 py-2 bg-gray-50 border border-gray-300 rounded-lg font-semibold text-gray-800">
+                {modelName}
               </div>
             </div>
           </div>
+
+          {/* 缸径 → 轴径（联动） */}
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
+            <div>
+              <label className="form-label">缸径（mm）</label>
+              <select
+                className="input-field"
+                value={bore ?? ''}
+                onChange={(e) => {
+                  const nextBore = Number(e.target.value);
+                  setBore(nextBore);
+                  const axisList = specs.filter(s => s.bore === nextBore).map(s => s.axis);
+                  setAxis(axisList[0] ?? null);
+                }}
+              >
+                {Array.from(new Set(specs.map(s => s.bore))).map(b => (
+                  <option key={b} value={b}>缸径{b}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="form-label">轴径（mm）</label>
+              <select
+                className="input-field"
+                value={axis ?? ''}
+                onChange={(e) => setAxis(Number(e.target.value))}
+              >
+                {axes.map(r => (
+                  <option key={r} value={r}>轴径{r}</option>
+                ))}
+              </select>
+            </div>
+            <div className="md:col-span-2 flex items-center gap-3">
+              <button className="btn-primary flex items-center space-x-2" onClick={handleSaveParams} disabled={busy}>
+                <Save className="h-4 w-4" />
+                <span>保存零件尺寸</span>
+              </button>
+              {changedKeys.length > 0 && (
+                <span className="text-sm text-amber-600">
+                  已手动修改 {changedKeys.length} 项（预览中已高亮）
+                </span>
+              )}
+            </div>
+          </div>
+
+          {/* 零件尺寸表（按零件分组，前列零件名 / 尺寸名） */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <div className="space-y-4">
+              <div className="border border-gray-200 rounded-lg overflow-hidden">
+                <div className="px-4 py-2 bg-gray-50 border-b border-gray-200 text-sm font-semibold text-gray-700">
+                  零件尺寸表
+                </div>
+                <div className="max-h-[380px] overflow-y-auto">
+                  <table className="w-full text-sm">
+                    <thead className="bg-gray-50 sticky top-0">
+                      <tr>
+                        <th className="text-left px-4 py-2 font-semibold text-gray-700 w-28">零件名</th>
+                        <th className="text-left px-4 py-2 font-semibold text-gray-700">尺寸名</th>
+                        <th className="text-left px-4 py-2 font-semibold text-gray-700 w-28">值</th>
+                        <th className="text-left px-4 py-2 font-semibold text-gray-700">说明</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {partGroups.map(group =>
+                        group.items.map((item, index) => {
+                          const modified = originalValues[item.name] !== undefined && values[item.name] !== originalValues[item.name];
+                          return (
+                            <tr key={item.name} className="border-t border-gray-100">
+                              {index === 0 && (
+                                <td
+                                  rowSpan={group.items.length}
+                                  className="px-4 py-1.5 text-gray-800 font-medium align-middle border-r border-gray-100"
+                                >
+                                  {group.part}
+                                </td>
+                              )}
+                              <td className="px-4 py-1.5 text-gray-800">{item.name}</td>
+                              <td className="px-4 py-1.5">
+                                <input
+                                  type="number"
+                                  className={`w-full px-2 py-1 border rounded focus:ring-2 focus:ring-brb-blue-500 focus:border-transparent ${
+                                    modified ? 'border-amber-400 bg-amber-50 text-amber-700' : 'border-gray-300'
+                                  }`}
+                                  value={values[item.name] ?? ''}
+                                  onChange={(e) => handleValueChange(item.name, e.target.value)}
+                                />
+                              </td>
+                              <td className="px-4 py-1.5 text-gray-500">{item.note}</td>
+                            </tr>
+                          );
+                        })
+                      )}
+                      {partGroups.length === 0 && (
+                        <tr>
+                          <td colSpan={4} className="px-4 py-6 text-center text-gray-500">暂无数据</td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              {/* 设计尺寸（自动推导，可覆盖项支持手工覆盖，不落盘） */}
+              <div className="border border-gray-200 rounded-lg overflow-hidden">
+                <div className="px-4 py-2 bg-gray-50 border-b border-gray-200 text-sm font-semibold text-gray-700">
+                  设计尺寸（自动推导）
+                </div>
+                <table className="w-full text-sm">
+                  <tbody>
+                    {DERIVED_FIELDS.map(field => {
+                      const ov = overrides[field.key];
+                      const enabled = Boolean(ov?.on);
+                      const computed = field.input
+                        ? (clearance === '' ? null : Number(clearance))
+                        : (preview ? Math.round((preview.axial_base?.[field.key] ?? preview.axial[field.key] ?? 0) * 1000) / 1000 : null);
+                      return (
+                        <tr key={field.key} className={`border-t border-gray-100${field.input ? ' bg-amber-50/40' : ''}`}>
+                          <td className="px-4 py-1.5 text-gray-800 w-[30%]">{field.label}</td>
+                          <td className="px-4 py-1.5 text-gray-800 font-medium whitespace-nowrap">
+                            {enabled ? (
+                              <span className="text-gray-400 line-through mr-2">{computed ?? '—'}</span>
+                            ) : (
+                              <span>{computed ?? '—'}</span>
+                            )}
+                          </td>
+                          <td className="px-4 py-1.5 w-40">
+                            {field.input ? (
+                              <input
+                                type="number"
+                                className="input-field py-0.5 px-2 text-sm w-24"
+                                value={clearance}
+                                onChange={(e) => setClearance(e.target.value)}
+                                placeholder="如 30"
+                              />
+                            ) : field.overridable ? (
+                              <div className="flex items-center space-x-2">
+                                <label className="flex items-center space-x-1 text-xs text-gray-600 cursor-pointer">
+                                  <input
+                                    type="checkbox"
+                                    className="h-3.5 w-3.5"
+                                    checked={enabled}
+                                    onChange={(e) => setOverride(field.key, { on: e.target.checked })}
+                                  />
+                                  <span>覆盖</span>
+                                </label>
+                                {enabled && (
+                                  <input
+                                    type="number"
+                                    className="input-field py-0.5 px-2 text-sm w-24"
+                                    value={ov?.value ?? ''}
+                                    onChange={(e) => setOverride(field.key, { value: e.target.value })}
+                                    placeholder="覆盖值"
+                                  />
+                                )}
+                              </div>
+                            ) : (
+                              <span className="text-gray-300">—</span>
+                            )}
+                          </td>
+                          <td className="px-4 py-1.5 text-gray-500">{field.note}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* 带尺寸矢量图 */}
+            <div className="border border-gray-200 rounded-lg p-3 flex flex-col">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-sm font-semibold text-gray-700">
+                  结构图预览（1:1）
+                </span>
+                <button
+                  className="text-sm text-brb-blue-600 hover:underline flex items-center space-x-1"
+                  onClick={() => setValues({ ...values })}
+                >
+                  <RefreshCw className="h-3.5 w-3.5" />
+                  <span>刷新</span>
+                </button>
+              </div>
+              {preview ? (
+                <>
+                  <StructurePreview preview={preview} />
+                  <p className="mt-2 text-xs text-gray-500">
+                    <span className="inline-block w-3 h-3 rounded-sm align-[-1px] mr-1" style={{ backgroundColor: LAYER_COLORS['预览尺寸层'] }} />
+                    蓝色标注为前腔长度、活塞宽度、后腔长度，仅用于预览核对，生成图纸时不输出此尺寸。
+                  </p>
+                </>
+              ) : (
+                <div className="flex-1 min-h-[420px] flex items-center justify-center bg-gray-50 rounded-lg text-gray-500">
+                  暂无预览
+                </div>
+              )}
+            </div>
+          </div>
         </div>
-      )}
+      </div>
     </div>
   );
 };

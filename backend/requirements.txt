@@ -13,3 +13,4 @@ beautifulsoup4==4.14.3
 olefile==0.47
 pywin32==311
 docx2txt==0.9
+ezdxf==1.4.3

@@ -31,6 +31,9 @@ try:
     from csv_to_dxf import csv_to_dxf
     from brb_materials import generate_materials_excel
     from refresh_brb_templates import refresh_brb_templates
+    from vfd_spec import (load_specs, load_basic_params, save_basic_params,
+                          params_to_dict, spec_dir, _num_text)
+    from vfd_geometry import build_preview, build_geometry, write_csv, axial_points, radial_values
     app_logger.info("所有后端模块导入成功")
 except Exception as e:
     app_logger.error(f"导入后端模块时出错: {e}")
@@ -604,6 +607,157 @@ def register_routes(app):
             import traceback
             traceback.print_exc()
             return jsonify({'status': 'error', 'message': f'设计过程出错: {str(e)}'}), 500
+
+    # ---------------------------------------------------------------- 粘滞阻尼器 VFD
+    @app.route('/api/vfd/specs', methods=['GET'])
+    def vfd_specs_api():
+        """规格库：缸径/轴径组合列表。"""
+        try:
+            specs = load_specs()
+            result = []
+            for item in specs:
+                params = load_basic_params(item['bore'], item['axis'])
+                result.append({
+                    'bore': item['bore'],
+                    'axis': item['axis'],
+                    'label': '缸径%s-轴径%s' % (_num_text(item['bore']), _num_text(item['axis'])),
+                    'available': len(params) > 0,
+                })
+            return jsonify({'status': 'success', 'specs': result})
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            return jsonify({'status': 'error', 'message': f'读取规格表出错: {str(e)}'}), 500
+
+    @app.route('/api/vfd/params', methods=['GET'])
+    def vfd_params_api():
+        """某规格的零件尺寸表。"""
+        try:
+            bore = request.args.get('bore', '')
+            axis = request.args.get('axis', '')
+            if not bore or not axis:
+                return jsonify({'status': 'error', 'message': '缺少缸径或轴径'}), 400
+            params = load_basic_params(bore, axis)
+            return jsonify({'status': 'success', 'params': params})
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            return jsonify({'status': 'error', 'message': f'读取零件尺寸出错: {str(e)}'}), 500
+
+    @app.route('/api/vfd/params', methods=['POST'])
+    def vfd_params_save_api():
+        """保存某规格的零件尺寸表（只覆盖传入的键）。"""
+        try:
+            data = request.get_json() or {}
+            bore = data.get('bore', '')
+            axis = data.get('axis', '')
+            values = data.get('values') or {}
+            if not bore or not axis:
+                return jsonify({'status': 'error', 'message': '缺少缸径或轴径'}), 400
+            params = save_basic_params(bore, axis, values)
+            return jsonify({'status': 'success', 'message': '零件尺寸已保存', 'params': params})
+        except FileNotFoundError as e:
+            return jsonify({'status': 'error', 'message': str(e)}), 404
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            return jsonify({'status': 'error', 'message': f'保存零件尺寸出错: {str(e)}'}), 500
+
+    @app.route('/api/vfd/preview', methods=['POST'])
+    def vfd_preview_api():
+        """结构图几何预览：参数 -> 几何实体 + 包围盒（前端画 SVG）。"""
+        try:
+            data = request.get_json() or {}
+            bore = data.get('bore')
+            axis = data.get('axis')
+            values = data.get('values') or None
+            displacement = data.get('displacement')
+            clearance = data.get('clearance')
+            overrides = data.get('overrides')
+
+            if values is None:
+                if bore is None or axis is None:
+                    return jsonify({'status': 'error', 'message': '缺少参数'}), 400
+                values = params_to_dict(load_basic_params(bore, axis))
+                if not values:
+                    return jsonify({'status': 'error', 'message': '该规格暂无基本尺寸表'}), 404
+
+            # 设计位移、腔体余量为输入参数，不走基本尺寸表，随请求注入参与推导
+            if displacement not in (None, ''):
+                values['设计位移'] = displacement
+            if clearance not in (None, ''):
+                values['腔体余量'] = clearance
+
+            preview = build_preview(values, overrides)
+            return jsonify({'status': 'success', 'preview': preview})
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            return jsonify({'status': 'error', 'message': f'生成预览出错: {str(e)}'}), 500
+
+    @app.route('/api/vfd/structure-dxf', methods=['POST'])
+    def vfd_structure_dxf_api():
+        """结构图 DXF：参数 -> CSV -> DXF，返回可下载文件信息。"""
+        temp_csv = None
+        try:
+            data = request.get_json() or {}
+            bore = data.get('bore')
+            axis = data.get('axis')
+            values = data.get('values') or None
+            displacement = data.get('displacement')
+            clearance = data.get('clearance')
+            overrides = data.get('overrides')
+
+            if values is None:
+                if bore is None or axis is None:
+                    return jsonify({'status': 'error', 'message': '缺少参数'}), 400
+                values = params_to_dict(load_basic_params(bore, axis))
+                if not values:
+                    return jsonify({'status': 'error', 'message': '该规格暂无基本尺寸表'}), 404
+
+            # 设计位移、腔体余量为输入参数，不走基本尺寸表，随请求注入参与推导
+            if displacement not in (None, ''):
+                values['设计位移'] = displacement
+            if clearance not in (None, ''):
+                values['腔体余量'] = clearance
+
+            entities, _x, _r = build_geometry(values, overrides)
+
+            upload_folder = app.config['UPLOAD_FOLDER']
+            os.makedirs(upload_folder, exist_ok=True)
+
+            model_name = str(data.get('modelName') or '').strip()
+            if not model_name:
+                model_name = 'VFD-%s-%s' % (_num_text(bore), _num_text(axis))
+            safe_name = secure_filename(model_name) or 'vfd_structure'
+
+            temp_csv = os.path.join(upload_folder, f'{uuid.uuid4().hex}.csv')
+            write_csv(entities, temp_csv)
+
+            dxf_path = os.path.join(upload_folder, f'{uuid.uuid4().hex}_{safe_name}.dxf')
+            csv_to_dxf(temp_csv, dxf_path)
+
+            if not dxf_path or not os.path.isfile(dxf_path):
+                return jsonify({'status': 'error', 'message': 'DXF 生成失败'}), 500
+
+            return jsonify({
+                'status': 'success',
+                'message': '结构图生成完成',
+                'result': {
+                    'name': f'{safe_name}_结构图.dxf',
+                    'path': dxf_path,
+                }
+            })
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            return jsonify({'status': 'error', 'message': f'生成结构图出错: {str(e)}'}), 500
+        finally:
+            if temp_csv and os.path.isfile(temp_csv):
+                try:
+                    os.remove(temp_csv)
+                except OSError:
+                    pass
 
     # BRB材料单生成API
     @app.route('/api/brb/materials', methods=['POST'])
