@@ -21,7 +21,7 @@
     但只作画图用的中间点，不再参与主链累计。
 
 参数分三类：
-    零件尺寸表  落盘在 data/vfd/缸径X-轴径Y/基本尺寸.csv，用户可改；
+    零件尺寸表  落盘在 data/vfd/缸径X，轴径Y/基本尺寸.csv，用户可改；
     输入参数    前端输入、不落盘，随请求注入（设计位移、腔体余量）；
     设计尺寸    不落盘，随型号与设计位移推导（见下方位移推导链与副链）。
 
@@ -31,6 +31,7 @@
     腔体长度 = 前腔长 + 活塞宽 + 后腔长
     轴后端伸出长 = 前腔长 - 5
     轴后端到后盖距离 = 极限位移 + 25（M20×80 螺栓帽高）+ 10（余量）
+    前吊耳至前盖 = 防尘罩长度核算（见 dust_cover_lug_distance）
 
 副链（由台阶端 / 导向套后端面向后推导）
     前缸筒后端 = 导向套后端面 + 前缸筒前后螺纹长度；前缸筒长 = 前缸筒后端 - 台阶端
@@ -190,8 +191,12 @@ class _Builder(object):
 
 # ---------------------------------------------------------------- 轴向特征点
 
-# 设计尺寸：不落盘，随型号推导。暂用内置常量占位，待公式确定后再改为计算值。
-LUG_TO_COVER = 140.0        # 前吊耳右侧边 → 前盖前端面（防尘罩长度，待核算）
+# 防尘罩核算用的固定参数：只写入公式，不落盘到基本尺寸.csv。
+# 依据「防尘罩长度计算.xlsx」的公式推导，含义见 dust_cover_lug_distance。
+DUST_COVER_CLAMP = 15.0         # 防尘罩卡箍长
+DUST_COVER_FLANGE = 3.0         # 防尘罩法兰厚
+DUST_COVER_BOLT_HEAD = 10.0     # 螺栓头长度
+DUST_COVER_CLEARANCE = 10.0     # 判断式中预留给螺栓头的安全余量
 
 
 def limit_displacement(design):
@@ -200,9 +205,37 @@ def limit_displacement(design):
     return d * 1.5 if d < 100 else d * 1.2
 
 
+def dust_cover_lug_distance(limit):
+    """前吊耳右侧边 → 前盖前端面（前吊耳设计距离）。
+
+    由防尘罩最短压缩长度与安装空间共同约束，取满足条件的下限后
+    就近圆整到末位 0 或 5；允许略微不足，由判断式中的螺栓头余量兜底。
+
+    约束来源（防尘罩最长时被拉到极限、最短时被压到极限）：
+        防尘罩最长长度 = 前吊耳设计距离 + 极限位移
+        防尘罩最小长度 = (最长长度 - 卡箍长 - 法兰厚) / 10 + 卡箍长 + 法兰厚 + 螺栓头长度
+        前吊耳最小距离 = 前吊耳设计距离 - 极限位移
+        判断：前吊耳最小距离 - 螺栓头余量 > 防尘罩最小长度
+
+    令 G 为前吊耳设计距离、Ld 为极限位移、H/I/J 为卡箍长/法兰厚/螺栓头长度，
+    展开判断式（压缩比 1/10）：
+        (G - Ld) - 10 > (G + Ld - H - I) / 10 + H + I + J
+        9G > 11·Ld + 9H + 9I + 10J + 100
+        G_min = (11·Ld + 9H + 9I + 10J + 100) / 9
+    """
+    ld = _num(limit, 0.0)
+    h = DUST_COVER_CLAMP
+    i = DUST_COVER_FLANGE
+    j = DUST_COVER_BOLT_HEAD
+    g_min = (11 * ld + 9 * h + 9 * i + 10 * j + 10 * DUST_COVER_CLEARANCE) / 9.0
+    # 就近圆整到末位 0 或 5；用 floor(x + 0.5) 避免 round() 的银行家舍入
+    return int(g_min / 5.0 + 0.5) * 5.0
+
+
 # 可手工覆盖的设计尺寸：其余设计尺寸一律由推导链决定，不允许覆盖。
 # 键名与前端 DERIVED_FIELDS 及 x[] 中的字段名保持一致。
-OVERRIDABLE_KEYS = ('lug_to_cover', 'rod_overhang', 'rod_to_rear_cover')
+# 前/后吊耳长默认取零件尺寸表里的值，允许在设计尺寸里覆盖。
+OVERRIDABLE_KEYS = ('front_lug_length', 'lug_to_cover', 'rod_overhang', 'rod_to_rear_cover', 'rear_lug_length')
 
 
 def _clean_overrides(overrides):
@@ -239,8 +272,10 @@ def axial_points(p, overrides=None):
     limit = limit_displacement(g('设计位移', 60))
     chamber = limit + clearance                       # 前腔长 = 后腔长
     cavity_len = chamber * 2 + piston_w               # 腔体长度
-    # 以下三项为可覆盖的设计尺寸
-    lug_to_cover = o('lug_to_cover', LUG_TO_COVER)                # 前吊耳至前盖
+    # 以下为可覆盖的设计尺寸；前/后吊耳长默认取零件尺寸表里的值
+    front_lug_len = o('front_lug_length', g('前吊耳长', 120))     # 前吊耳长
+    rear_lug_len = o('rear_lug_length', g('后吊耳长', 100))       # 后吊耳长
+    lug_to_cover = o('lug_to_cover', dust_cover_lug_distance(limit))   # 前吊耳至前盖（防尘罩核算）
     rod_overhang = o('rod_overhang', chamber - 5)                 # 轴后端伸出长
     rod_to_rear_cover = o('rod_to_rear_cover', limit + 25 + 10)   # 轴后端到后盖距离（25 为 M20×80 螺栓帽高）
     # 后缸筒长度 = 轴后端伸出长 + 轴后端到后盖距离 + 后盖螺纹长度
@@ -249,7 +284,7 @@ def axial_points(p, overrides=None):
     x = {
         'front_lug': 0.0,
     }
-    x['lug_right'] = x['front_lug'] + g('前吊耳长', 120)
+    x['lug_right'] = x['front_lug'] + front_lug_len
     # 轴端螺纹：自吊耳右侧边向左旋入，
     # thread_end 为螺纹里端，lug_right 为螺纹入口（吊耳右侧边）
     x['thread_end'] = x['lug_right'] - g('轴端螺纹长度', 55)
@@ -264,7 +299,7 @@ def axial_points(p, overrides=None):
     x['guide_sleeve_back'] = x['guide_sleeve_front'] + g('导向套台阶厚', 10)
     x['rear_barrel_front'] = x['guide_sleeve_back'] + rear_barrel_len
     x['rear_barrel_back'] = x['rear_barrel_front'] + g('后盖台阶厚', 10)
-    x['rear_lug'] = x['rear_barrel_back'] + g('后吊耳长', 100)
+    x['rear_lug'] = x['rear_barrel_back'] + rear_lug_len
 
     # —— 结果尺寸（由上述特征点与位移推导链得出，不再作为输入）
     x['barrel_back'] = x['guide_sleeve_back'] + g('前缸筒前后螺纹长度', 35)
@@ -272,6 +307,8 @@ def axial_points(p, overrides=None):
     x['taper_start'] = x['taper_end'] - g('锥收口长', 4)
     x['rear_transition_end'] = x['taper_end'] + rod_to_rear_cover
 
+    x['front_lug_length'] = front_lug_len                 # 前吊耳长
+    x['rear_lug_length'] = rear_lug_len                   # 后吊耳长
     x['limit_displacement'] = limit
     x['chamber'] = chamber                                # 前腔长 = 后腔长
     x['cavity_length'] = cavity_len
@@ -400,8 +437,8 @@ def build_dimensions(b, p, x, r):
     b.radius_dim(r['lug'], (x['front_lug'], 0), 142.314)
     b.radius_dim(r['lug'], (x['rear_lug'], 0), 31.969)
 
-    # 前吊耳长
-    b.linear_dim(g('前吊耳长'), (x['front_lug'], r['lug']), (x['lug_right'], r['lug']),
+    # 前吊耳长（默认取零件尺寸，允许在设计尺寸里覆盖）
+    b.linear_dim(x['front_lug_length'], (x['front_lug'], r['lug']), (x['lug_right'], r['lug']),
                  (x['front_lug'], 120))
     # 前吊耳至前盖（设计尺寸）
     b.linear_dim(x['lug_to_cover'], (x['lug_right'], r['lug']), (x['cover_front'], r['barrel_out']),
@@ -412,8 +449,8 @@ def build_dimensions(b, p, x, r):
     # 后缸筒长度（设计尺寸）
     b.linear_dim(x['rear_barrel_length'], (x['guide_sleeve_back'], r['rear_inner']), (x['rear_barrel_front'], r['rear_barrel_out']),
                  (x['guide_sleeve_back'], 115))
-    # 后吊耳长
-    b.linear_dim(g('后吊耳长'), (x['rear_barrel_back'], 0), (x['rear_lug'], 0),
+    # 后吊耳长（默认取零件尺寸，允许在设计尺寸里覆盖）
+    b.linear_dim(x['rear_lug_length'], (x['rear_barrel_back'], 0), (x['rear_lug'], 0),
                  (x['rear_barrel_back'], 115))
     # 轴后端伸出长（结果尺寸：导向套后端面 → 轴后端面）
     b.linear_dim(x['rod_overhang'], (x['guide_sleeve_back'], -30), (x['taper_end'], -r['taper_end']),

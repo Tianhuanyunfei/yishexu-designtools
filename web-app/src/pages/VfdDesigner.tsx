@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { Zap, Download, Upload, FileImage, FileText, Save, RefreshCw } from 'lucide-react';
+import { Zap, Download, FilePlus, FolderOpen, FileImage, FileText, Save, RefreshCw, ArrowLeft, Table2 } from 'lucide-react';
 import { useToast } from '../components/Toast';
 
 /* ------------------------------------------------------------------ 类型 */
@@ -65,6 +65,9 @@ interface DimEntity {
 
 type Entity = LineEntity | ArcEntity | CircleEntity | TextEntity | DimEntity;
 
+/** 可覆盖设计尺寸：on 为是否启用覆盖，value 为覆盖值文本 */
+type Overrides = Record<string, { on: boolean; value: string }>;
+
 interface Preview {
   entities: Entity[];
   axial: Record<string, number>;
@@ -76,7 +79,6 @@ interface Preview {
 }
 
 /* -------------------------------------------------------------- 预览配色 */
-
 const LAYER_COLORS: Record<string, string> = {
   '粗实线层': '#1f2937',
   '细实线层': '#6b7280',
@@ -90,15 +92,17 @@ const colorOf = (layer: string) => LAYER_COLORS[layer] || '#9ca3af';
 
 /** 设计尺寸：由设计位移与零件尺寸推导，不落盘，仅供查看 */
 const DERIVED_FIELDS: Array<{ key: string; label: string; note: string; overridable?: boolean; input?: boolean }> = [
+  { key: 'front_lug_length', label: '前吊耳长', note: '默认取零件尺寸表；前吊耳中心至前吊耳右侧边', overridable: true },
   { key: 'limit_displacement', label: '极限位移', note: '设计位移 < 100 时 ×1.5，否则 ×1.2' },
   { key: 'clearance', label: '腔体余量', note: '活塞运动到极限时与前盖或导向套的距离', input: true },
   { key: 'chamber', label: '前腔/后腔长度', note: '极限位移 + 腔体余量' },
   { key: 'cavity_length', label: '腔体长度', note: '前腔长 + 活塞宽 + 后腔长' },
-  { key: 'lug_to_cover', label: '前吊耳至前盖', note: '防尘罩长度，公式待定（暂用常量 140）', overridable: true },
+  { key: 'lug_to_cover', label: '前吊耳至前盖', note: '防尘罩长度核算：下限 (11×极限位移 + 362) ÷ 9 后取到末位 0 或 5', overridable: true },
   { key: 'barrel_length', label: '前缸筒长度', note: '台阶端至前缸筒后端' },
   { key: 'rod_overhang', label: '轴后端伸出长', note: '前腔/后腔长度 − 5', overridable: true },
   { key: 'rod_to_rear_cover', label: '轴后端到后盖距离', note: '极限位移 + 25 + 10', overridable: true },
   { key: 'rear_barrel_length', label: '后缸筒长度', note: '轴后端伸出长 + 轴后端到后盖距离 + 后盖螺纹长度' },
+  { key: 'rear_lug_length', label: '后吊耳长', note: '默认取零件尺寸表；后缸筒后端面至后吊耳中心', overridable: true },
   { key: 'rod_length', label: '轴的总长', note: '轴端螺纹里端至轴后端面' },
   { key: 'install_length', label: '安装距离', note: '前吊耳中心至后吊耳中心' },
 ];
@@ -302,14 +306,16 @@ const VfdDesigner: React.FC = () => {
 
   const [params, setParams] = useState<ParamItem[]>([]);
   const [values, setValues] = useState<Record<string, number>>({});
-  const [originalValues, setOriginalValues] = useState<Record<string, number>>({});
 
   const [preview, setPreview] = useState<Preview | null>(null);
   const [busy, setBusy] = useState(false);
   const firstLoad = useRef(true);
 
+  /** 视图：主页面 / 零件尺寸表（二级页面） */
+  const [view, setView] = useState<'main' | 'parts'>('main');
+
   // 可覆盖设计尺寸：on 为是否启用覆盖，value 为覆盖值文本（空串表示未填）
-  const [overrides, setOverrides] = useState<Record<string, { on: boolean; value: string }>>({});
+  const [overrides, setOverrides] = useState<Overrides>({});
 
   useEffect(() => { localStorage.setItem('vfd_projectName', projectName); }, [projectName]);
   useEffect(() => { localStorage.setItem('vfd_force', force); }, [force]);
@@ -325,10 +331,7 @@ const VfdDesigner: React.FC = () => {
         const res = await fetch('/api/vfd/specs');
         const data = await res.json();
         if (data.status !== 'success') throw new Error(data.message || '读取规格表失败');
-        const list: Spec[] = data.specs || [];
-        setSpecs(list);
-        const first = list.find(s => s.available) || list[0];
-        if (first) { setBore(first.bore); setAxis(first.axis); }
+        setSpecs(data.specs || []);
       } catch (error) {
         showToast(error instanceof Error ? error.message : '读取规格表失败', 'error');
       }
@@ -340,9 +343,14 @@ const VfdDesigner: React.FC = () => {
     [specs, bore]
   );
 
-  /* --- 零件尺寸表 --- */
+  /* --- 零件尺寸表：只在缸径与轴径都选定后才读取（数值为后台维护的默认尺寸） --- */
   useEffect(() => {
-    if (bore === null || axis === null) return;
+    if (bore === null || axis === null) {
+      setParams([]);
+      setValues({});
+      setPreview(null);
+      return;
+    }
     (async () => {
       try {
         const res = await fetch(`/api/vfd/params?bore=${bore}&axis=${axis}`);
@@ -353,12 +361,10 @@ const VfdDesigner: React.FC = () => {
         list.forEach(item => { dict[item.name] = item.value; });
         setParams(list);
         setValues(dict);
-        setOriginalValues(dict);
         firstLoad.current = true;
       } catch (error) {
         setParams([]);
         setValues({});
-        setOriginalValues({});
         showToast(error instanceof Error ? error.message : '读取零件尺寸失败', 'error');
       }
     })();
@@ -396,11 +402,6 @@ const VfdDesigner: React.FC = () => {
     return () => clearTimeout(timer);
   }, [values, displacement, clearance, overridePayload, showToast]);
 
-  const changedKeys = useMemo(
-    () => Object.keys(values).filter(k => originalValues[k] !== undefined && values[k] !== originalValues[k]),
-    [values, originalValues]
-  );
-
   const partGroups = useMemo(() => {
     const groups: Array<{ part: string; items: ParamItem[] }> = [];
     params.forEach(item => {
@@ -411,42 +412,12 @@ const VfdDesigner: React.FC = () => {
     return groups;
   }, [params]);
 
-  const handleValueChange = (name: string, text: string) => {
-    setValues(prev => ({ ...prev, [name]: text === '' ? 0 : Number(text) }));
-  };
-
   /* --- 覆盖开关与覆盖值 --- */
   const setOverride = (key: string, patch: { on?: boolean; value?: string }) => {
     setOverrides(prev => {
       const cur = prev[key] ?? { on: false, value: '' };
       return { ...prev, [key]: { ...cur, ...patch } };
     });
-  };
-
-  /* --- 保存零件尺寸 --- */
-  const handleSaveParams = async () => {
-    if (bore === null || axis === null) return;
-    try {
-      setBusy(true);
-      const res = await fetch('/api/vfd/params', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ bore, axis, values }),
-      });
-      const data = await res.json();
-      if (data.status !== 'success') throw new Error(data.message || '保存失败');
-      const list: ParamItem[] = data.params || [];
-      const dict: Record<string, number> = {};
-      list.forEach(item => { dict[item.name] = item.value; });
-      setParams(list);
-      setValues(dict);
-      setOriginalValues(dict);
-      showToast('零件尺寸已保存', 'success');
-    } catch (error) {
-      showToast(error instanceof Error ? error.message : '保存失败', 'error');
-    } finally {
-      setBusy(false);
-    }
   };
 
   /* --- 生成结构图 DXF 并下载 --- */
@@ -485,37 +456,70 @@ const VfdDesigner: React.FC = () => {
     }
   };
 
-  /* --- 导出 / 导入参数 --- */
-  const handleExport = () => {
-    const payload = { projectName, modelName, bore, axis, values };
+  /* --- 项目：新建 / 打开 / 保存 --- */
+
+  /** 是否有内容会被新建操作清掉 */
+  const projectDirty = () => Boolean(projectName || force || displacement || bore !== null);
+
+  const handleNewProject = () => {
+    if (projectDirty() && !window.confirm('当前项目的内容将被清空，确定要新建项目吗？')) return;
+    setProjectName('');
+    setForce('');
+    setDisplacement('');
+    setClearance('');
+    setBore(null);
+    setAxis(null);
+    setOverrides({});
+    setParams([]);
+    setValues({});
+    setPreview(null);
+    setView('main');
+    showToast('已新建项目', 'success');
+  };
+
+  const handleSaveProject = () => {
+    const payload = {
+      projectName, modelName, force, displacement, clearance, bore, axis,
+      overrides,
+    };
     const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
     const url = window.URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `${modelName}_参数.json`;
+    a.download = `${projectName || modelName}_项目.json`;
     document.body.appendChild(a);
     a.click();
     a.remove();
     window.URL.revokeObjectURL(url);
-    showToast('参数已导出', 'success');
+    showToast('项目已保存', 'success');
   };
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const handleImport = (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleOpenProject = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
     const reader = new FileReader();
+    /** 项目文件由用户提供，缸径/轴径统一按数字处理，非法值视为未选 */
+    const toSize = (raw: unknown): number | null => {
+      const n = Number(raw);
+      return Number.isFinite(n) && n > 0 ? n : null;
+    };
     reader.onload = () => {
       try {
         const data = JSON.parse(String(reader.result));
-        if (data.projectName !== undefined) setProjectName(data.projectName);
-        if (data.bore !== undefined && data.bore !== null) setBore(data.bore);
-        if (data.axis !== undefined && data.axis !== null) setAxis(data.axis);
-        if (data.values) setValues(prev => ({ ...prev, ...data.values }));
-        showToast('参数已导入', 'success');
+        setProjectName(data.projectName ?? '');
+        setForce(data.force ?? '');
+        setDisplacement(data.displacement ?? '');
+        setClearance(data.clearance ?? '');
+        setOverrides(data.overrides ?? {});
+        // 零件尺寸由缸径/轴径决定，只恢复选型，尺寸表由后端重新读取
+        setBore(toSize(data.bore));
+        setAxis(toSize(data.axis));
+        setView('main');
+        showToast('项目已打开', 'success');
       } catch {
-        showToast('导入文件格式有误', 'error');
+        showToast('项目文件格式有误', 'error');
       }
     };
     reader.readAsText(file);
@@ -542,7 +546,23 @@ const VfdDesigner: React.FC = () => {
             />
           </div>
           <div className="flex flex-wrap gap-3">
-            <button className="btn-primary flex items-center space-x-2" onClick={handleGenerateDrawing} disabled={busy}>
+            <button className="btn-primary flex items-center space-x-2" onClick={handleNewProject} disabled={busy}>
+              <FilePlus className="h-4 w-4" />
+              <span>新建项目</span>
+            </button>
+            <button
+              className="btn-secondary flex items-center space-x-2"
+              onClick={() => fileInputRef.current?.click()}
+            >
+              <FolderOpen className="h-4 w-4" />
+              <span>打开项目</span>
+            </button>
+            <button className="btn-secondary flex items-center space-x-2" onClick={handleSaveProject}>
+              <Save className="h-4 w-4" />
+              <span>保存项目</span>
+            </button>
+            <input ref={fileInputRef} type="file" accept=".json" className="hidden" onChange={handleOpenProject} />
+            <button className="btn-secondary flex items-center space-x-2" onClick={handleGenerateDrawing} disabled={busy}>
               <Download className="h-4 w-4" />
               <span>生成图纸</span>
             </button>
@@ -560,18 +580,6 @@ const VfdDesigner: React.FC = () => {
               <FileText className="h-4 w-4" />
               <span>生成材料单</span>
             </button>
-            <button className="btn-secondary flex items-center space-x-2" onClick={handleExport}>
-              <Download className="h-4 w-4" />
-              <span>导出</span>
-            </button>
-            <button
-              className="btn-secondary flex items-center space-x-2"
-              onClick={() => fileInputRef.current?.click()}
-            >
-              <Upload className="h-4 w-4" />
-              <span>导入</span>
-            </button>
-            <input ref={fileInputRef} type="file" accept=".json" className="hidden" onChange={handleImport} />
           </div>
         </div>
       </div>
@@ -639,6 +647,7 @@ const VfdDesigner: React.FC = () => {
                   setAxis(axisList[0] ?? null);
                 }}
               >
+                <option value="" disabled>请选择缸径</option>
                 {Array.from(new Set(specs.map(s => s.bore))).map(b => (
                   <option key={b} value={b}>缸径{b}</option>
                 ))}
@@ -651,178 +660,189 @@ const VfdDesigner: React.FC = () => {
                 value={axis ?? ''}
                 onChange={(e) => setAxis(Number(e.target.value))}
               >
+                <option value="" disabled>请选择轴径</option>
                 {axes.map(r => (
                   <option key={r} value={r}>轴径{r}</option>
                 ))}
               </select>
             </div>
             <div className="md:col-span-2 flex items-center gap-3">
-              <button className="btn-primary flex items-center space-x-2" onClick={handleSaveParams} disabled={busy}>
-                <Save className="h-4 w-4" />
-                <span>保存零件尺寸</span>
+              <button
+                className="btn-secondary flex items-center space-x-2"
+                onClick={() => setView('parts')}
+                disabled={bore === null || axis === null}
+              >
+                <Table2 className="h-4 w-4" />
+                <span>零件尺寸表</span>
               </button>
-              {changedKeys.length > 0 && (
-                <span className="text-sm text-amber-600">
-                  已手动修改 {changedKeys.length} 项（预览中已高亮）
-                </span>
-              )}
-            </div>
-          </div>
-
-          {/* 零件尺寸表（按零件分组，前列零件名 / 尺寸名） */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <div className="space-y-4">
-              <div className="border border-gray-200 rounded-lg overflow-hidden">
-                <div className="px-4 py-2 bg-gray-50 border-b border-gray-200 text-sm font-semibold text-gray-700">
-                  零件尺寸表
-                </div>
-                <div className="max-h-[380px] overflow-y-auto">
-                  <table className="w-full text-sm">
-                    <thead className="bg-gray-50 sticky top-0">
-                      <tr>
-                        <th className="text-left px-4 py-2 font-semibold text-gray-700 w-28">零件名</th>
-                        <th className="text-left px-4 py-2 font-semibold text-gray-700">尺寸名</th>
-                        <th className="text-left px-4 py-2 font-semibold text-gray-700 w-28">值</th>
-                        <th className="text-left px-4 py-2 font-semibold text-gray-700">说明</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {partGroups.map(group =>
-                        group.items.map((item, index) => {
-                          const modified = originalValues[item.name] !== undefined && values[item.name] !== originalValues[item.name];
-                          return (
-                            <tr key={item.name} className="border-t border-gray-100">
-                              {index === 0 && (
-                                <td
-                                  rowSpan={group.items.length}
-                                  className="px-4 py-1.5 text-gray-800 font-medium align-middle border-r border-gray-100"
-                                >
-                                  {group.part}
-                                </td>
-                              )}
-                              <td className="px-4 py-1.5 text-gray-800">{item.name}</td>
-                              <td className="px-4 py-1.5">
-                                <input
-                                  type="number"
-                                  className={`w-full px-2 py-1 border rounded focus:ring-2 focus:ring-brb-blue-500 focus:border-transparent ${
-                                    modified ? 'border-amber-400 bg-amber-50 text-amber-700' : 'border-gray-300'
-                                  }`}
-                                  value={values[item.name] ?? ''}
-                                  onChange={(e) => handleValueChange(item.name, e.target.value)}
-                                />
-                              </td>
-                              <td className="px-4 py-1.5 text-gray-500">{item.note}</td>
-                            </tr>
-                          );
-                        })
-                      )}
-                      {partGroups.length === 0 && (
-                        <tr>
-                          <td colSpan={4} className="px-4 py-6 text-center text-gray-500">暂无数据</td>
-                        </tr>
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-
-              {/* 设计尺寸（自动推导，可覆盖项支持手工覆盖，不落盘） */}
-              <div className="border border-gray-200 rounded-lg overflow-hidden">
-                <div className="px-4 py-2 bg-gray-50 border-b border-gray-200 text-sm font-semibold text-gray-700">
-                  设计尺寸（自动推导）
-                </div>
-                <table className="w-full text-sm">
-                  <tbody>
-                    {DERIVED_FIELDS.map(field => {
-                      const ov = overrides[field.key];
-                      const enabled = Boolean(ov?.on);
-                      const computed = field.input
-                        ? (clearance === '' ? null : Number(clearance))
-                        : (preview ? Math.round((preview.axial_base?.[field.key] ?? preview.axial[field.key] ?? 0) * 1000) / 1000 : null);
-                      return (
-                        <tr key={field.key} className={`border-t border-gray-100${field.input ? ' bg-amber-50/40' : ''}`}>
-                          <td className="px-4 py-1.5 text-gray-800 w-[30%]">{field.label}</td>
-                          <td className="px-4 py-1.5 text-gray-800 font-medium whitespace-nowrap">
-                            {enabled ? (
-                              <span className="text-gray-400 line-through mr-2">{computed ?? '—'}</span>
-                            ) : (
-                              <span>{computed ?? '—'}</span>
-                            )}
-                          </td>
-                          <td className="px-4 py-1.5 w-40">
-                            {field.input ? (
-                              <input
-                                type="number"
-                                className="input-field py-0.5 px-2 text-sm w-24"
-                                value={clearance}
-                                onChange={(e) => setClearance(e.target.value)}
-                                placeholder="如 30"
-                              />
-                            ) : field.overridable ? (
-                              <div className="flex items-center space-x-2">
-                                <label className="flex items-center space-x-1 text-xs text-gray-600 cursor-pointer">
-                                  <input
-                                    type="checkbox"
-                                    className="h-3.5 w-3.5"
-                                    checked={enabled}
-                                    onChange={(e) => setOverride(field.key, { on: e.target.checked })}
-                                  />
-                                  <span>覆盖</span>
-                                </label>
-                                {enabled && (
-                                  <input
-                                    type="number"
-                                    className="input-field py-0.5 px-2 text-sm w-24"
-                                    value={ov?.value ?? ''}
-                                    onChange={(e) => setOverride(field.key, { value: e.target.value })}
-                                    placeholder="覆盖值"
-                                  />
-                                )}
-                              </div>
-                            ) : (
-                              <span className="text-gray-300">—</span>
-                            )}
-                          </td>
-                          <td className="px-4 py-1.5 text-gray-500">{field.note}</td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-
-            {/* 带尺寸矢量图 */}
-            <div className="border border-gray-200 rounded-lg p-3 flex flex-col">
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-sm font-semibold text-gray-700">
-                  结构图预览（1:1）
-                </span>
-                <button
-                  className="text-sm text-brb-blue-600 hover:underline flex items-center space-x-1"
-                  onClick={() => setValues({ ...values })}
-                >
-                  <RefreshCw className="h-3.5 w-3.5" />
-                  <span>刷新</span>
-                </button>
-              </div>
-              {preview ? (
-                <>
-                  <StructurePreview preview={preview} />
-                  <p className="mt-2 text-xs text-gray-500">
-                    <span className="inline-block w-3 h-3 rounded-sm align-[-1px] mr-1" style={{ backgroundColor: LAYER_COLORS['预览尺寸层'] }} />
-                    蓝色标注为前腔长度、活塞宽度、后腔长度，仅用于预览核对，生成图纸时不输出此尺寸。
-                  </p>
-                </>
-              ) : (
-                <div className="flex-1 min-h-[420px] flex items-center justify-center bg-gray-50 rounded-lg text-gray-500">
-                  暂无预览
-                </div>
-              )}
+              <span className="text-sm text-gray-500">
+                零件尺寸表为此型号的默认尺寸，由后台维护，网页端不可修改
+              </span>
             </div>
           </div>
         </div>
       </div>
+
+      {view === 'parts' ? (
+        /* 二级页面：零件尺寸表（只读，后台维护） */
+        <div className="card overflow-hidden">
+          <div className="flex flex-wrap items-center justify-between gap-3 px-6 py-3 border-b border-gray-200 bg-gray-50">
+            <div className="flex items-center space-x-3">
+              <button
+                className="btn-secondary flex items-center space-x-2 py-1"
+                onClick={() => setView('main')}
+              >
+                <ArrowLeft className="h-4 w-4" />
+                <span>返回</span>
+              </button>
+              <span className="text-sm font-semibold text-gray-700">零件尺寸表</span>
+              <span className="text-sm text-gray-500">{modelName}</span>
+            </div>
+            <span className="text-xs text-gray-500">
+              {bore === null || axis === null
+                ? '请先选择缸径与轴径'
+                : '此型号的默认尺寸，仅后台可更改；前吊耳长 / 后吊耳长可在设计尺寸中覆盖'}
+            </span>
+          </div>
+          <div className="max-h-[640px] overflow-y-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-gray-50 sticky top-0">
+                <tr>
+                  <th className="text-left px-6 py-2 font-semibold text-gray-700 w-36">零件名</th>
+                  <th className="text-left px-6 py-2 font-semibold text-gray-700 w-48">尺寸名</th>
+                  <th className="text-left px-6 py-2 font-semibold text-gray-700 w-32">值</th>
+                  <th className="text-left px-6 py-2 font-semibold text-gray-700">说明</th>
+                </tr>
+              </thead>
+              <tbody>
+                {partGroups.map(group =>
+                  group.items.map((item, index) => (
+                    <tr key={item.name} className="border-t border-gray-100">
+                      {index === 0 && (
+                        <td
+                          rowSpan={group.items.length}
+                          className="px-6 py-1.5 text-gray-800 font-medium align-middle border-r border-gray-100"
+                        >
+                          {group.part}
+                        </td>
+                      )}
+                      <td className="px-6 py-1.5 text-gray-800">{item.name}</td>
+                      <td className="px-6 py-1.5 text-gray-900 font-medium">{values[item.name] ?? '—'}</td>
+                      <td className="px-6 py-1.5 text-gray-500">{item.note}</td>
+                    </tr>
+                  ))
+                )}
+                {partGroups.length === 0 && (
+                  <tr>
+                    <td colSpan={4} className="px-6 py-10 text-center text-gray-500">
+                      {bore === null || axis === null ? '请先选择缸径与轴径' : '暂无数据'}
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      ) : (
+        <>
+          {/* 设计尺寸（自动推导，可覆盖项支持手工覆盖，不落盘） */}
+          <div className="card overflow-hidden">
+            <div className="px-6 py-2 bg-gray-50 border-b border-gray-200 text-sm font-semibold text-gray-700">
+              设计尺寸（自动推导）
+            </div>
+            <table className="w-full text-sm">
+              <tbody>
+                {DERIVED_FIELDS.map(field => {
+                  const ov = overrides[field.key];
+                  const enabled = Boolean(ov?.on);
+                  // 启用覆盖的行显示被划掉的公式推导值（axial_base），
+                  // 其余行显示图纸实际生效值（axial，已含覆盖引起的下游变化）
+                  const source = preview ? (enabled ? (preview.axial_base ?? preview.axial) : preview.axial) : null;
+                  const computed = field.input
+                    ? (clearance === '' ? null : Number(clearance))
+                    : (source ? Math.round((source[field.key] ?? 0) * 1000) / 1000 : null);
+                  return (
+                    <tr key={field.key} className={`border-t border-gray-100${field.input ? ' bg-amber-50/40' : ''}`}>
+                      <td className="px-6 py-1.5 text-gray-800 w-[22%]">{field.label}</td>
+                      <td className="px-6 py-1.5 text-gray-800 font-medium whitespace-nowrap w-[16%]">
+                        {enabled ? (
+                          <span className="text-gray-400 line-through mr-2">{computed ?? '—'}</span>
+                        ) : (
+                          <span>{computed ?? '—'}</span>
+                        )}
+                      </td>
+                      <td className="px-6 py-1.5 w-52">
+                        {field.input ? (
+                          <input
+                            type="number"
+                            className="input-field py-0.5 px-2 text-sm w-24"
+                            value={clearance}
+                            onChange={(e) => setClearance(e.target.value)}
+                            placeholder="如 30"
+                          />
+                        ) : field.overridable ? (
+                          <div className="flex items-center space-x-2">
+                            <label className="flex items-center space-x-1 text-xs text-gray-600 cursor-pointer">
+                              <input
+                                type="checkbox"
+                                className="h-3.5 w-3.5"
+                                checked={enabled}
+                                onChange={(e) => setOverride(field.key, { on: e.target.checked })}
+                              />
+                              <span>覆盖</span>
+                            </label>
+                            {enabled && (
+                              <input
+                                type="number"
+                                className="input-field py-0.5 px-2 text-sm w-24"
+                                value={ov?.value ?? ''}
+                                onChange={(e) => setOverride(field.key, { value: e.target.value })}
+                                placeholder="覆盖值"
+                              />
+                            )}
+                          </div>
+                        ) : (
+                          <span className="text-gray-300">—</span>
+                        )}
+                      </td>
+                      <td className="px-6 py-1.5 text-gray-500">{field.note}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+
+          {/* 带尺寸矢量图（左右贯通） */}
+          <div className="card p-4 flex flex-col">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-sm font-semibold text-gray-700">
+                结构图预览（1:1）
+              </span>
+              <button
+                className="text-sm text-brb-blue-600 hover:underline flex items-center space-x-1"
+                onClick={() => setValues({ ...values })}
+              >
+                <RefreshCw className="h-3.5 w-3.5" />
+                <span>刷新</span>
+              </button>
+            </div>
+            {preview ? (
+              <>
+                <StructurePreview preview={preview} />
+                <p className="mt-2 text-xs text-gray-500">
+                  <span className="inline-block w-3 h-3 rounded-sm align-[-1px] mr-1" style={{ backgroundColor: LAYER_COLORS['预览尺寸层'] }} />
+                  蓝色标注为前腔长度、活塞宽度、后腔长度，仅用于预览核对，生成图纸时不输出此尺寸。
+                </p>
+              </>
+            ) : (
+              <div className="flex-1 min-h-[420px] flex items-center justify-center bg-gray-50 rounded-lg text-gray-500">
+                暂无预览
+              </div>
+            )}
+          </div>
+        </>
+      )}
     </div>
   );
 };

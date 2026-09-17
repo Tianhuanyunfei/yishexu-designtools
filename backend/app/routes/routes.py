@@ -620,7 +620,7 @@ def register_routes(app):
                 result.append({
                     'bore': item['bore'],
                     'axis': item['axis'],
-                    'label': '缸径%s-轴径%s' % (_num_text(item['bore']), _num_text(item['axis'])),
+                    'label': '缸径%s，轴径%s' % (_num_text(item['bore']), _num_text(item['axis'])),
                     'available': len(params) > 0,
                 })
             return jsonify({'status': 'success', 'specs': result})
@@ -727,9 +727,12 @@ def register_routes(app):
             os.makedirs(upload_folder, exist_ok=True)
 
             model_name = str(data.get('modelName') or '').strip()
-            if not model_name:
-                model_name = 'VFD-%s-%s' % (_num_text(bore), _num_text(axis))
-            safe_name = secure_filename(model_name) or 'vfd_structure'
+            if model_name:
+                # 前端传值可能含路径字符，需过滤
+                safe_name = secure_filename(model_name) or 'vfd_structure'
+            else:
+                # 默认名用「缸径X，轴径Y」，中文会被 secure_filename 剔除，故不走过滤
+                safe_name = '缸径%s，轴径%s' % (_num_text(bore), _num_text(axis))
 
             temp_csv = os.path.join(upload_folder, f'{uuid.uuid4().hex}.csv')
             write_csv(entities, temp_csv)

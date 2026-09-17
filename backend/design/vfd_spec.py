@@ -4,7 +4,7 @@
 四层数据架构中的第①、②层：
 
     ① 规格库    data/vfd/VFD-规格表.csv              缸径/轴径组合，由用户填写
-    ② 基本尺寸   data/vfd/缸径X-轴径Y/基本尺寸.csv    结构图基准尺寸，用户改数值
+    ② 基本尺寸   data/vfd/缸径X，轴径Y/基本尺寸.csv    结构图基准尺寸，用户改数值
 
 本模块只负责读写，不含任何几何逻辑。
 """
@@ -18,8 +18,11 @@ BASIC_FILENAME = '基本尺寸.csv'
 
 
 def spec_dir(bore, axis):
-    """该规格对应的数据目录：data/vfd/缸径140-轴径50"""
-    return os.path.join(VFD_DATA_DIR, f'缸径{_num_text(bore)}-轴径{_num_text(axis)}')
+    """该规格对应的数据目录：data/vfd/缸径140，轴径50
+
+    缸径与轴径之间用中文逗号分隔，避免与型号 VFD-[力]-[位移] 的连字符混淆。
+    """
+    return os.path.join(VFD_DATA_DIR, f'缸径{_num_text(bore)}，轴径{_num_text(axis)}')
 
 
 def _num_text(value):
