@@ -136,6 +136,10 @@ def drawing(doc, msp, input_file, output_file):
             # 如果已存在，可以选择更新属性或跳过
             logging.info(f"dimstyle '{name}' 已存在，将跳过创建")
 
+    # 创建 MTEXT 使用的文字样式，避免样式缺失告警
+    if 'CUSTOM_TEXTSTYLE' not in doc.styles:
+        doc.styles.new('CUSTOM_TEXTSTYLE', dxfattribs={'font': 'txt.shx'})
+
 
     # 第二次遍历，处理实体
     for line_num, row in enumerate(data, start=2):

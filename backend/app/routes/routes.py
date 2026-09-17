@@ -33,7 +33,8 @@ try:
     from refresh_brb_templates import refresh_brb_templates
     from vfd_spec import (load_specs, load_basic_params, save_basic_params,
                           params_to_dict, spec_dir, _num_text)
-    from vfd_geometry import build_preview, build_geometry, write_csv, axial_points, radial_values
+    from vfd_geometry import (build_preview, build_geometry, write_csv, axial_points,
+                              radial_values, title_info_of)
     app_logger.info("所有后端模块导入成功")
 except Exception as e:
     app_logger.error(f"导入后端模块时出错: {e}")
@@ -663,6 +664,22 @@ def register_routes(app):
             traceback.print_exc()
             return jsonify({'status': 'error', 'message': f'保存零件尺寸出错: {str(e)}'}), 500
 
+    def _title_info(data):
+        """从请求中提取标题栏可填字段（项目名称/零件名称/产品型号/图纸编号/数量）。"""
+        return title_info_of(
+            project=data.get('projectName'),
+            model=data.get('modelName'),
+            drawing_no=data.get('drawingNo'),
+            part=data.get('partName'),
+            quantity=data.get('quantity'),
+        )
+
+    def _missing_quantity(data):
+        """标题栏数量为必填设计输入，未填不允许出图，返回错误响应。"""
+        if str(data.get('quantity') or '').strip():
+            return None
+        return jsonify({'status': 'error', 'message': '生成图纸前请先填写产品数量'}), 400
+
     @app.route('/api/vfd/preview', methods=['POST'])
     def vfd_preview_api():
         """结构图几何预览：参数 -> 几何实体 + 包围盒（前端画 SVG）。"""
@@ -688,7 +705,7 @@ def register_routes(app):
             if clearance not in (None, ''):
                 values['腔体余量'] = clearance
 
-            preview = build_preview(values, overrides)
+            preview = build_preview(values, overrides, title_info=_title_info(data))
             return jsonify({'status': 'success', 'preview': preview})
         except Exception as e:
             import traceback
@@ -701,6 +718,9 @@ def register_routes(app):
         temp_csv = None
         try:
             data = request.get_json() or {}
+            missing = _missing_quantity(data)
+            if missing:
+                return missing
             bore = data.get('bore')
             axis = data.get('axis')
             values = data.get('values') or None
@@ -721,7 +741,9 @@ def register_routes(app):
             if clearance not in (None, ''):
                 values['腔体余量'] = clearance
 
-            entities, _x, _r = build_geometry(values, overrides)
+            entities, _x, _r = build_geometry(values, overrides,
+                                              with_frame=True,
+                                              title_info=_title_info(data))
 
             upload_folder = app.config['UPLOAD_FOLDER']
             os.makedirs(upload_folder, exist_ok=True)

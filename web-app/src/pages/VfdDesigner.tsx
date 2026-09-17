@@ -45,6 +45,10 @@ interface TextEntity {
   type: 'TEXT' | 'MTEXT';
   layer: string;
   text: string;
+  /** MTEXT 的纯文本（不含 {\\W0.7;\\T1.1;...} 控制码），预览用 */
+  plain?: string;
+  /** MTEXT 宽度因子，预览按此压缩字宽 */
+  width_factor?: number;
   position: [number, number];
   height: number;
   rotation: number;
@@ -121,6 +125,12 @@ const arcPoints = (cx: number, cy: number, radius: number, a0: number, a1: numbe
   return pts.join(' ');
 };
 
+/** MTEXT 纯文本：去掉 {\\W0.7;\\T1.1;文字} 这类控制码，预览只显示文字 */
+const mtextPlain = (entity: TextEntity) => {
+  if (entity.plain !== undefined) return entity.plain;
+  return entity.text.replace(/\{[^{}]*?;([^{}]*?)\}/g, '$1');
+};
+
 /** 尺寸文字：DXF 的 %%C 表示直径符号 */
 const dimText = (entity: DimEntity) => {
   const raw = entity.override && entity.override !== '<>'
@@ -129,21 +139,58 @@ const dimText = (entity: DimEntity) => {
   return raw.replace(/%%C|%%c/g, 'Ø');
 };
 
+/** 尺寸文字的白底矩形：垫在文字下面，避免被图形线条干扰 */
+const DimBackdrop: React.FC<{ cx: number; cy: number; text: string; fontSize: number }> = ({
+  cx, cy, text, fontSize,
+}) => {
+  const w = text.length * fontSize * 0.68;
+  const h = fontSize * 1.2;
+  return (
+    <rect
+      x={cx - w / 2}
+      y={cy - fontSize * 0.92}
+      width={w}
+      height={h}
+      fill="#ffffff"
+    />
+  );
+};
+
+/** 尺寸线箭头：实心三角，顶点在 (ax, ay)，尖端指向 (dx, dy)，尾翼反向展开 */
+const arrowPoints = (ax: number, ay: number, dx: number, dy: number, size: number) => {
+  const len = Math.hypot(dx, dy) || 1;
+  const ux = dx / len;
+  const uy = dy / len;
+  const w = size * 0.2;
+  const bx = ax - ux * size;
+  const by = ay - uy * size;
+  return `${ax},${-ay} ${bx - uy * w},${-(by + ux * w)} ${bx + uy * w},${-(by - ux * w)}`;
+};
+
 /* ------------------------------------------------------------ 结构图预览 */
+
+/** 预览高度上限（vh）：超过则按比例缩小，避免整页装不下 */
+const PREVIEW_MAX_VH = 90;
+
+/** MTEXT 在 DXF 里的插入点是左上角，SVG 的 y 是基线，需下移的比例（× 字高） */
+const MTEXT_BASELINE_RATIO = 0.9;
 
 const StructurePreview: React.FC<{ preview: Preview }> = ({ preview }) => {
   const { bbox, entities } = preview;
 
   const width = Math.max(bbox.max_x - bbox.min_x, 1);
   const height = Math.max(bbox.max_y - bbox.min_y, 1);
-  const pad = Math.max(width, height) * 0.06;
+  const pad = Math.max(width, height) * 0.02;
   const viewBox = `${bbox.min_x - pad} ${-bbox.max_y - pad} ${width + 2 * pad} ${height + 2 * pad}`;
   const fontSize = Math.max(width, height) / 70;
+  const dimFontSize = fontSize * 0.72;   // 尺寸文字略小于图形注释文字，避免抢画面
+  // 预览按屏幕高度限高：宽高比由内容决定，max-width 用 vh 表达，保证整页放得下
+  const maxWidthVh = (width / height) * PREVIEW_MAX_VH;
 
   return (
     <svg
       className="w-full bg-white border border-gray-200 rounded-lg"
-      style={{ height: 460 }}
+      style={{ height: 'auto', maxWidth: `${maxWidthVh.toFixed(2)}vh`, margin: '0 auto', display: 'block' }}
       viewBox={viewBox}
       preserveAspectRatio="xMidYMid meet"
     >
@@ -190,19 +237,28 @@ const StructurePreview: React.FC<{ preview: Preview }> = ({ preview }) => {
           );
         }
 
-        // TEXT / MTEXT：指引线注释等文字
+        // TEXT / MTEXT：指引线注释、标题栏等文字
         if (entity.type === 'TEXT' || entity.type === 'MTEXT') {
+          const tx = entity.position[0];
+          // MTEXT 的插入点在左上角，预览要按基线画，故整体下移约一个字高
+          const drop = entity.type === 'MTEXT' ? (entity.height || fontSize) * MTEXT_BASELINE_RATIO : 0;
+          const ty = -entity.position[1] + drop;
+          const wf = entity.type === 'MTEXT' ? entity.width_factor ?? 1 : 1;
+          const transforms = [
+            entity.rotation ? `rotate(${-entity.rotation} ${tx} ${ty})` : '',
+            wf !== 1 ? `translate(${tx} 0) scale(${wf} 1) translate(${-tx} 0)` : '',
+          ].filter(Boolean).join(' ');
           return (
             <text
               key={index}
-              x={entity.position[0]}
-              y={-entity.position[1]}
+              x={tx}
+              y={ty}
               fill={stroke}
               fontSize={entity.height || fontSize}
               textAnchor="start"
-              transform={entity.rotation ? `rotate(${-entity.rotation} ${entity.position[0]} ${-entity.position[1]})` : undefined}
+              transform={transforms || undefined}
             >
-              {entity.text}
+              {entity.type === 'MTEXT' ? mtextPlain(entity) : entity.text}
             </text>
           );
         }
@@ -215,6 +271,13 @@ const StructurePreview: React.FC<{ preview: Preview }> = ({ preview }) => {
           const a = (entity.angle * Math.PI) / 180;
           const ex = entity.center[0] + entity.value * Math.cos(a);
           const ey = entity.center[1] + entity.value * Math.sin(a);
+          const ty = -ey - dimFontSize * 0.4;    // 抬离尺寸线，避免压线
+          const arrow = dimFontSize * 0.9;
+          const label = dimText(entity);
+          // 出圆弧后折出一段水平线，文字骑在水平线上方，并整体往所在侧（左/右）平移
+          const dir = Math.cos(a) >= 0 ? 1 : -1;
+          const tail = label.length * dimFontSize * 0.68 + dimFontSize * 0.6;
+          const hx = ex + dir * tail;
           return (
             <g key={index}>
               <line
@@ -225,8 +288,21 @@ const StructurePreview: React.FC<{ preview: Preview }> = ({ preview }) => {
                 stroke={stroke}
                 strokeWidth={fontSize * 0.05}
               />
-              <text x={ex} y={-ey - fontSize * 0.4} fill={stroke} fontSize={fontSize} textAnchor="middle">
-                {dimText(entity)}
+              <polygon
+                points={arrowPoints(ex, ey, ex - entity.center[0], ey - entity.center[1], arrow)}
+                fill={stroke}
+              />
+              <line
+                x1={ex}
+                y1={-ey}
+                x2={hx}
+                y2={-ey}
+                stroke={stroke}
+                strokeWidth={fontSize * 0.05}
+              />
+              <DimBackdrop cx={(ex + hx) / 2} cy={ty} text={label} fontSize={dimFontSize} />
+              <text x={(ex + hx) / 2} y={ty} fill={stroke} fontSize={dimFontSize} textAnchor="middle">
+                {label}
               </text>
             </g>
           );
@@ -253,6 +329,12 @@ const StructurePreview: React.FC<{ preview: Preview }> = ({ preview }) => {
               [p2[0], p2[1], p2[0], loc[1]],
             ];
 
+        // 尺寸线两端的箭头：尖端在被测点，箭尾朝尺寸线内侧
+        const arrow = dimFontSize * 0.9;
+        const dimArrow = (px: number, py: number, qx: number, qy: number, k: string) => (
+          <polygon key={k} points={arrowPoints(px, py, px - qx, py - qy, arrow)} fill={stroke} />
+        );
+
         return (
           <g key={index}>
             {extLines.map(([ax, ay, bx, by], i) => (
@@ -274,11 +356,19 @@ const StructurePreview: React.FC<{ preview: Preview }> = ({ preview }) => {
               stroke={stroke}
               strokeWidth={fontSize * 0.05}
             />
+            {dimArrow(x1, y1, x2, y2, 'arr1')}
+            {dimArrow(x2, y2, x1, y1, 'arr2')}
+            <DimBackdrop
+              cx={(x1 + x2) / 2}
+              cy={-((y1 + y2) / 2) - dimFontSize * 0.4}
+              text={dimText(entity)}
+              fontSize={dimFontSize}
+            />
             <text
               x={(x1 + x2) / 2}
-              y={-((y1 + y2) / 2) - fontSize * 0.35}
+              y={-((y1 + y2) / 2) - dimFontSize * 0.4}
               fill={stroke}
-              fontSize={fontSize}
+              fontSize={dimFontSize}
               textAnchor="middle"
             >
               {dimText(entity)}
@@ -292,17 +382,38 @@ const StructurePreview: React.FC<{ preview: Preview }> = ({ preview }) => {
 
 /* ------------------------------------------------------------------ 页面 */
 
+/** 缸径/轴径持久化：从 localStorage 读取，空值或非法值视为未选 */
+const readSize = (key: string): number | null => {
+  const raw = localStorage.getItem(key);
+  if (raw === null || raw === '') return null;
+  const n = Number(raw);
+  return Number.isFinite(n) && n > 0 ? n : null;
+};
+
+/** 覆盖值持久化：从 localStorage 读取，内容损坏时退回空对象 */
+const readOverrides = (): Overrides => {
+  const raw = localStorage.getItem('vfd_overrides');
+  if (!raw) return {};
+  try {
+    const data = JSON.parse(raw);
+    return data && typeof data === 'object' ? (data as Overrides) : {};
+  } catch {
+    return {};
+  }
+};
+
 const VfdDesigner: React.FC = () => {
   const { showToast } = useToast();
 
   const [projectName, setProjectName] = useState(() => localStorage.getItem('vfd_projectName') || '');
+  const [quantity, setQuantity] = useState(() => localStorage.getItem('vfd_quantity') || '');
   const [force, setForce] = useState(() => localStorage.getItem('vfd_force') || '');
   const [displacement, setDisplacement] = useState(() => localStorage.getItem('vfd_displacement') || '');
   const [clearance, setClearance] = useState(() => localStorage.getItem('vfd_clearance') || '30');
 
   const [specs, setSpecs] = useState<Spec[]>([]);
-  const [bore, setBore] = useState<number | null>(null);
-  const [axis, setAxis] = useState<number | null>(null);
+  const [bore, setBore] = useState<number | null>(() => readSize('vfd_bore'));
+  const [axis, setAxis] = useState<number | null>(() => readSize('vfd_axis'));
 
   const [params, setParams] = useState<ParamItem[]>([]);
   const [values, setValues] = useState<Record<string, number>>({});
@@ -315,12 +426,22 @@ const VfdDesigner: React.FC = () => {
   const [view, setView] = useState<'main' | 'parts'>('main');
 
   // 可覆盖设计尺寸：on 为是否启用覆盖，value 为覆盖值文本（空串表示未填）
-  const [overrides, setOverrides] = useState<Overrides>({});
+  const [overrides, setOverrides] = useState<Overrides>(readOverrides);
 
   useEffect(() => { localStorage.setItem('vfd_projectName', projectName); }, [projectName]);
+  useEffect(() => { localStorage.setItem('vfd_quantity', quantity); }, [quantity]);
   useEffect(() => { localStorage.setItem('vfd_force', force); }, [force]);
   useEffect(() => { localStorage.setItem('vfd_displacement', displacement); }, [displacement]);
   useEffect(() => { localStorage.setItem('vfd_clearance', clearance); }, [clearance]);
+  useEffect(() => {
+    localStorage.setItem('vfd_bore', bore === null ? '' : String(bore));
+  }, [bore]);
+  useEffect(() => {
+    localStorage.setItem('vfd_axis', axis === null ? '' : String(axis));
+  }, [axis]);
+  useEffect(() => {
+    localStorage.setItem('vfd_overrides', JSON.stringify(overrides));
+  }, [overrides]);
 
   const modelName = `VFD-${force || '?'}-${displacement || '?'}`;
 
@@ -389,7 +510,7 @@ const VfdDesigner: React.FC = () => {
         const res = await fetch('/api/vfd/preview', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ values, displacement, clearance, overrides: overridePayload }),
+          body: JSON.stringify({ values, displacement, clearance, overrides: overridePayload, projectName, modelName, quantity }),
         });
         const data = await res.json();
         if (data.status !== 'success') throw new Error(data.message || '生成预览失败');
@@ -400,7 +521,7 @@ const VfdDesigner: React.FC = () => {
     }, firstLoad.current ? 0 : 400);
     firstLoad.current = false;
     return () => clearTimeout(timer);
-  }, [values, displacement, clearance, overridePayload, showToast]);
+  }, [values, displacement, clearance, overridePayload, projectName, modelName, quantity, showToast]);
 
   const partGroups = useMemo(() => {
     const groups: Array<{ part: string; items: ParamItem[] }> = [];
@@ -426,12 +547,16 @@ const VfdDesigner: React.FC = () => {
       showToast('请先选择缸径与轴径', 'error');
       return;
     }
+    if (!quantity.trim()) {
+      showToast('请先填写产品数量', 'error');
+      return;
+    }
     try {
       setBusy(true);
       const res = await fetch('/api/vfd/structure-dxf', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ bore, axis, values, modelName, displacement, clearance, overrides: overridePayload }),
+        body: JSON.stringify({ bore, axis, values, modelName, displacement, clearance, overrides: overridePayload, projectName, quantity }),
       });
       const data = await res.json();
       if (data.status !== 'success') throw new Error(data.message || '生成图纸失败');
@@ -459,11 +584,12 @@ const VfdDesigner: React.FC = () => {
   /* --- 项目：新建 / 打开 / 保存 --- */
 
   /** 是否有内容会被新建操作清掉 */
-  const projectDirty = () => Boolean(projectName || force || displacement || bore !== null);
+  const projectDirty = () => Boolean(projectName || quantity || force || displacement || bore !== null);
 
   const handleNewProject = () => {
     if (projectDirty() && !window.confirm('当前项目的内容将被清空，确定要新建项目吗？')) return;
     setProjectName('');
+    setQuantity('');
     setForce('');
     setDisplacement('');
     setClearance('');
@@ -479,7 +605,7 @@ const VfdDesigner: React.FC = () => {
 
   const handleSaveProject = () => {
     const payload = {
-      projectName, modelName, force, displacement, clearance, bore, axis,
+      projectName, modelName, force, displacement, clearance, bore, axis, quantity,
       overrides,
     };
     const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
@@ -509,6 +635,7 @@ const VfdDesigner: React.FC = () => {
       try {
         const data = JSON.parse(String(reader.result));
         setProjectName(data.projectName ?? '');
+        setQuantity(data.quantity ?? '');
         setForce(data.force ?? '');
         setDisplacement(data.displacement ?? '');
         setClearance(data.clearance ?? '');
@@ -527,7 +654,7 @@ const VfdDesigner: React.FC = () => {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 px-4 md:px-12 xl:px-20">
       {/* 第一行：项目名称 + 操作按钮 */}
       <div className="card p-6">
         <div className="flex flex-wrap items-end gap-4">
@@ -594,7 +721,7 @@ const VfdDesigner: React.FC = () => {
 
         <div className="p-6 space-y-5">
           {/* 型号：VFD-[力]-[设计位移] */}
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
+          <div className="grid grid-cols-1 md:grid-cols-5 gap-4 items-end">
             <div>
               <label className="form-label">力（kN）</label>
               <input
@@ -630,6 +757,16 @@ const VfdDesigner: React.FC = () => {
               <div className="px-4 py-2 bg-gray-50 border border-gray-300 rounded-lg font-semibold text-gray-800">
                 {modelName}
               </div>
+            </div>
+            <div>
+              <label className="form-label">产品数量</label>
+              <input
+                type="text"
+                className="input-field"
+                value={quantity}
+                onChange={(e) => setQuantity(e.target.value)}
+                placeholder=""
+              />
             </div>
           </div>
 
@@ -744,13 +881,21 @@ const VfdDesigner: React.FC = () => {
           </div>
         </div>
       ) : (
-        <>
-          {/* 设计尺寸（自动推导，可覆盖项支持手工覆盖，不落盘） */}
-          <div className="card overflow-hidden">
-            <div className="px-6 py-2 bg-gray-50 border-b border-gray-200 text-sm font-semibold text-gray-700">
+        /* 结构图预览在左、设计尺寸在右，预览宽度受列宽约束后自然收窄 */
+        <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_400px] gap-4 items-start">
+          {/* 右侧：设计尺寸（自动推导，可覆盖项支持手工覆盖，不落盘） */}
+          <div className="card overflow-hidden xl:order-2">
+            <div className="px-4 py-2 bg-gray-50 border-b border-gray-200 text-sm font-semibold text-gray-700">
               设计尺寸（自动推导）
             </div>
             <table className="w-full text-sm">
+              <thead className="bg-gray-50">
+                <tr className="border-b border-gray-200 text-gray-500">
+                  <th className="text-left px-3 py-1.5 font-semibold">尺寸名</th>
+                  <th className="text-left px-3 py-1.5 font-semibold">推导值（mm）</th>
+                  <th className="text-left px-3 py-1.5 font-semibold">覆盖</th>
+                </tr>
+              </thead>
               <tbody>
                 {DERIVED_FIELDS.map(field => {
                   const ov = overrides[field.key];
@@ -763,15 +908,27 @@ const VfdDesigner: React.FC = () => {
                     : (source ? Math.round((source[field.key] ?? 0) * 1000) / 1000 : null);
                   return (
                     <tr key={field.key} className={`border-t border-gray-100${field.input ? ' bg-amber-50/40' : ''}`}>
-                      <td className="px-6 py-1.5 text-gray-800 w-[22%]">{field.label}</td>
-                      <td className="px-6 py-1.5 text-gray-800 font-medium whitespace-nowrap w-[16%]">
+                      <td className="px-3 py-1.5 text-gray-800">
+                        <span className="flex items-center space-x-1">
+                          <span>{field.label}</span>
+                          {field.note && (
+                            <span
+                              title={field.note}
+                              className="inline-flex items-center justify-center w-3.5 h-3.5 rounded-full border border-gray-300 text-[10px] leading-none text-gray-400 cursor-help select-none"
+                            >
+                              ?
+                            </span>
+                          )}
+                        </span>
+                      </td>
+                      <td className="px-3 py-1.5 text-gray-800 font-medium whitespace-nowrap">
                         {enabled ? (
                           <span className="text-gray-400 line-through mr-2">{computed ?? '—'}</span>
                         ) : (
                           <span>{computed ?? '—'}</span>
                         )}
                       </td>
-                      <td className="px-6 py-1.5 w-52">
+                      <td className="px-3 py-1.5 whitespace-nowrap">
                         {field.input ? (
                           <input
                             type="number"
@@ -781,31 +938,19 @@ const VfdDesigner: React.FC = () => {
                             placeholder="如 30"
                           />
                         ) : field.overridable ? (
-                          <div className="flex items-center space-x-2">
-                            <label className="flex items-center space-x-1 text-xs text-gray-600 cursor-pointer">
-                              <input
-                                type="checkbox"
-                                className="h-3.5 w-3.5"
-                                checked={enabled}
-                                onChange={(e) => setOverride(field.key, { on: e.target.checked })}
-                              />
-                              <span>覆盖</span>
-                            </label>
-                            {enabled && (
-                              <input
-                                type="number"
-                                className="input-field py-0.5 px-2 text-sm w-24"
-                                value={ov?.value ?? ''}
-                                onChange={(e) => setOverride(field.key, { value: e.target.value })}
-                                placeholder="覆盖值"
-                              />
-                            )}
-                          </div>
+                          /* 小框内填了数字即代表覆盖，清空即取消覆盖 */
+                          <input
+                            type="number"
+                            className="input-field py-0.5 px-2 text-sm w-20"
+                            value={ov?.value ?? ''}
+                            onChange={(e) =>
+                              setOverride(field.key, { value: e.target.value, on: e.target.value.trim() !== '' })
+                            }
+                          />
                         ) : (
                           <span className="text-gray-300">—</span>
                         )}
                       </td>
-                      <td className="px-6 py-1.5 text-gray-500">{field.note}</td>
                     </tr>
                   );
                 })}
@@ -813,8 +958,8 @@ const VfdDesigner: React.FC = () => {
             </table>
           </div>
 
-          {/* 带尺寸矢量图（左右贯通） */}
-          <div className="card p-4 flex flex-col">
+          {/* 左侧：带尺寸矢量图 */}
+          <div className="card p-4 flex flex-col xl:order-1 min-w-0">
             <div className="flex items-center justify-between mb-2">
               <span className="text-sm font-semibold text-gray-700">
                 结构图预览（1:1）
@@ -841,7 +986,7 @@ const VfdDesigner: React.FC = () => {
               </div>
             )}
           </div>
-        </>
+        </div>
       )}
     </div>
   );

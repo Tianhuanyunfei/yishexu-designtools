@@ -40,11 +40,12 @@
     后缸筒长度 = 轴后端伸出长 + 轴后端到后盖距离 + 后盖螺纹长度
     轴的总长 = 锥形终点 - 轴端螺纹里端；安装距离 = 前吊耳中心至后吊耳中心
 
-说明：本版为骨架样板，图框 / 标题栏 / 引出说明 / 防护罩尚未接入，
-后续按需求逐项补充。
+已接入：防尘罩（锯齿波纹）、图框（图幅贴合内容）、标题栏（内容可填）；
+待补充：引出说明块、剖面线。
 """
 import os
 import csv
+import math
 
 # ---------------------------------------------------------------- 图层与样式
 
@@ -188,6 +189,29 @@ class _Builder(object):
             'height': LEADER_TEXT_HEIGHT, 'rotation': 0.0,
         })
 
+    def text(self, value, position, height, rotation=0.0, layer=LAYER_OUTLINE):
+        """单行文字，position 为文字基线左端。"""
+        self.entities.append({
+            'type': 'TEXT', 'layer': layer, 'text': str(value),
+            'position': (float(position[0]), float(position[1])),
+            'height': float(height), 'rotation': float(rotation),
+        })
+
+    def mtext(self, value, position, height, rotation=0.0, layer=LAYER_OUTLINE,
+              width_factor=0.7):
+        """带格式文字，按样张格式 {\W宽度因子;\T行距;文字} 输出。
+
+        plain / width_factor 供预览使用：预览不解析 MTEXT 控制码，直接用
+        plain 显示文字，并按 width_factor 压缩字宽。
+        """
+        self.entities.append({
+            'type': 'MTEXT', 'layer': layer,
+            'text': '{\\W%s;\\T1.1;%s}' % (_fmt(width_factor), value),
+            'plain': str(value), 'width_factor': float(width_factor),
+            'position': (float(position[0]), float(position[1])),
+            'height': float(height), 'rotation': float(rotation),
+        })
+
 
 # ---------------------------------------------------------------- 轴向特征点
 
@@ -197,6 +221,14 @@ DUST_COVER_CLAMP = 15.0         # 防尘罩卡箍长
 DUST_COVER_FLANGE = 3.0         # 防尘罩法兰厚
 DUST_COVER_BOLT_HEAD = 10.0     # 螺栓头长度
 DUST_COVER_CLEARANCE = 10.0     # 判断式中预留给螺栓头的安全余量
+
+# 防尘罩外形尺寸（与产品图样张一致）
+DUST_COVER_FLANGE_R = 65.0      # 右端法兰外半径
+DUST_COVER_BELLOWS_R = 40.0     # 波纹段外半径
+DUST_COVER_BELLOWS_INNER = 30.0 # 波纹段内沿半径（画虚线用）
+DUST_COVER_CLAMP_OUT_R = 28.5   # 左端卡箍外半径
+DUST_COVER_CLAMP_IN_R = 27.5    # 左端卡箍内半径
+DUST_COVER_WAVE_PITCH = 15.0    # 波纹节距（一个波峰到下一个波峰的轴向距离）
 
 
 def limit_displacement(design):
@@ -371,7 +403,8 @@ def build_outline(b, p, x, r):
     b.sym_line(x['thread_end'], r['rod'], x['lug_right'], r['rod'], layer=LAYER_HIDDEN)
     # 轴端螺纹里端封闭竖线
     b.sym_line(x['thread_end'], r['rod'], x['thread_end'], -r['rod'], layer=LAYER_HIDDEN)
-    b.sym_line(x['lug_right'], r['rod'], x['cover_front'], r['rod'])
+    # 该段被防尘罩整体包覆，按制图惯例画成虚线
+    b.sym_line(x['lug_right'], r['rod'], x['cover_front'], r['rod'], layer=LAYER_HIDDEN)
 
     # —— 前缸筒前端面 + 前盖台阶
     b.sym_line(x['cover_front'], r['barrel_out'], x['cover_front'], -r['barrel_out'])
@@ -427,6 +460,55 @@ def build_outline(b, p, x, r):
     b.line(x['rear_lug'], -75, x['rear_lug'], 75, LAYER_CENTER)
 
 
+def build_dust_cover(b, p, x, r):
+    """防尘罩：右端法兰 + 波纹段（波浪线）+ 左端卡箍。
+
+    轴向跨度 = 设计尺寸 lug_to_cover（前吊耳右侧边 → 前盖前端面），
+    自右向左依次为：法兰厚 3 → 波纹段 → 卡箍长 15。
+    右端面与前盖前端面平齐，左端面贴前吊耳右侧边。
+    """
+    right = x['cover_front']                       # 右端面（与前盖前端面平齐）
+    left = x['lug_right']                          # 左端面（贴前吊耳右侧边）
+    flange_left = right - DUST_COVER_FLANGE        # 法兰左端面 = 波纹段右端
+    clamp_right = min(left + DUST_COVER_CLAMP, flange_left)   # 卡箍右端 = 波纹段左端
+
+    # —— 右端法兰（外径 Ø130）
+    b.sym_line(right, DUST_COVER_FLANGE_R, right, -DUST_COVER_FLANGE_R)
+    b.sym_line(flange_left, DUST_COVER_FLANGE_R, flange_left, -DUST_COVER_FLANGE_R)
+    b.sym_line(right, DUST_COVER_FLANGE_R, flange_left, DUST_COVER_FLANGE_R)
+
+    # —— 波纹段：波峰（r40）与波谷（r30）之间往返的圆弧，即波浪线
+    span = flange_left - clamp_right
+    if span > 1e-6:
+        amp = (DUST_COVER_BELLOWS_R - DUST_COVER_BELLOWS_INNER) / 2.0   # 波高（半幅）
+        mid = (DUST_COVER_BELLOWS_R + DUST_COVER_BELLOWS_INNER) / 2.0   # 波纹的基线半径
+        count = max(2, int(round(span / (DUST_COVER_WAVE_PITCH / 2.0))))
+        step = span / count                                             # 一段圆弧的轴向跨度
+        # 弦长为 step、矢高为 amp 的圆弧：半径 radius，圆心相对顶点的偏移 d
+        radius = (step * step / 4.0 + amp * amp) / (2.0 * amp)
+        d = radius - amp
+        a_r = math.degrees(math.atan2(d, step / 2.0))                   # 端点角度（右）
+        a_l = math.degrees(math.atan2(d, -step / 2.0))                  # 端点角度（左）
+        for i in range(count):
+            cx = clamp_right + (i + 0.5) * step
+            if i % 2 == 0:          # 波峰朝外（顶点在 r40）
+                c_y, a0, a1 = mid - d, a_r, a_l
+            else:                   # 波谷朝内（顶点在 r30）
+                c_y, a0, a1 = mid + d, a_r + 180.0, a_l + 180.0
+            b.arc(cx, c_y, radius, a0 % 360.0, a1 % 360.0)
+            b.arc(cx, -c_y, radius, (-a1) % 360.0, (-a0) % 360.0)
+        # 相邻圆弧交接处：上侧交接点 → 下侧交接点 画竖线（跨过轴线，不镜像）
+        for i in range(1, count):
+            jx = clamp_right + i * step
+            b.line(jx, mid, jx, -mid)
+        # 波纹段与卡箍相接处封板
+        b.sym_line(clamp_right, DUST_COVER_BELLOWS_R, clamp_right, -DUST_COVER_BELLOWS_R)
+
+    # —— 左端卡箍（外径 Ø57 / 内径 Ø55）
+    b.sym_line(clamp_right, DUST_COVER_CLAMP_OUT_R, left, DUST_COVER_CLAMP_OUT_R)
+    b.sym_line(clamp_right, DUST_COVER_CLAMP_IN_R, left, DUST_COVER_CLAMP_IN_R)
+
+
 # ---------------------------------------------------------------- 尺寸标注
 
 def build_dimensions(b, p, x, r):
@@ -454,7 +536,7 @@ def build_dimensions(b, p, x, r):
                  (x['rear_barrel_back'], 115))
     # 轴后端伸出长（结果尺寸：导向套后端面 → 轴后端面）
     b.linear_dim(x['rod_overhang'], (x['guide_sleeve_back'], -30), (x['taper_end'], -r['taper_end']),
-                 (x['guide_sleeve_back'], -46))
+                 (x['guide_sleeve_back'], -50))
     # 轴后端到后盖距离（结果尺寸）
     b.linear_dim(x['rod_to_rear_cover'], (x['taper_end'], 16.923), (x['rear_transition_end'], 7.171),
                  (x['taper_end'], 40))
@@ -482,15 +564,17 @@ def build_dimensions(b, p, x, r):
 
     # 耳环厚度：垂直于图面方向，轮廓上量不到，按产品图做法用指引线引出注释
     note = '耳环厚度%s' % _fmt(g('耳环厚度', 60))
-    gap = LEADER_TEXT_HEIGHT * 1.5          # 文字与水平引线的间距
-    # 前吊耳：自耳环上边缘折向左上，文字在水平段上方
-    px = x['front_lug'] + r['lug']
-    b.leader([(px, r['lug']), (px - 45, 100), (px - 148, 100)],
-             note, (px - 146, 100 + gap))
-    # 后吊耳：自耳环下边缘折向左下，文字在水平段下方
-    px = x['rear_lug'] - r['lug']
-    b.leader([(px, -r['lug']), (px + 45, -100), (px - 58, -100)],
-             note, (px - 56, -100 - gap))
+    gap = LEADER_TEXT_HEIGHT * 0.6          # 文字与水平引线的间距
+    # 落点取吊耳圆弧上偏 45° 的位置，比轮廓最外极点靠里一点
+    inset = r['lug'] / math.sqrt(2.0)
+    # 前吊耳：自左侧圆弧向左上折，再水平向左伸出，文字在水平段上方
+    lx = x['front_lug'] - inset + 25
+    b.leader([(lx, inset), (lx - 45, 100), (lx - 150, 100)],
+             note, (lx - 148, 100 + gap))
+    # 后吊耳：自右侧圆弧向右上折，再水平向右伸出，文字在水平段上方
+    rx = x['rear_lug'] + inset - 25
+    b.leader([(rx, inset), (rx + 45, 100), (rx + 150, 100)],
+             note, (rx + 43, 100 + gap))
 
 
 def build_preview_dimensions(b, p, x, r):
@@ -512,13 +596,258 @@ def build_preview_dimensions(b, p, x, r):
                  (x['piston_right'], y), layer=LAYER_PREVIEW_DIM)
 
 
+# ---------------------------------------------------------------- 图框与标题栏
+
+FRAME_MARGIN = 25.0        # 内容与内框之间的最小边距
+FRAME_UP_BIAS = 0.1        # 图形中心相对可用区中心上移的比例（× 可用区高度），图面更匀称
+FRAME_GAP = 40.0           # 内框与外框的间距（与样张一致）
+TITLE_W = 720.0            # 标题栏宽（与样张一致）
+TITLE_H = 200.0            # 标题栏高（与样张一致）
+
+# GB/T 14689 基本幅面的长宽比恒为 √2，加长幅面也沿用同一比例，
+# 因此图幅不必查表：先定长边，再按比例算出短边即可。
+SHEET_RATIO = math.sqrt(2.0)
+
+
+def _sheet_size(need_w, need_h):
+    """按标准长宽比（√2）算图幅，返回 (宽, 高)。
+
+    取内容所需的长边作为图幅长边（向上取整到 1mm），短边由长边除以 √2
+    得出，因此长宽比恒为标准值。
+    """
+    long_need, short_need = (need_w, need_h) if need_w >= need_h else (need_h, need_w)
+    long_side = math.ceil(max(long_need, short_need * SHEET_RATIO))
+    if need_w >= need_h:
+        return float(long_side), long_side / SHEET_RATIO
+    return long_side / SHEET_RATIO, float(long_side)
+
+# 标题栏固定内容（与产品图样张一致）；项目名称/零件名称/产品型号/图纸编号/
+# 数量由 title_info 传入，其余按样张固定。
+TITLE_COMPANY = '羿射旭减隔震张家口有限公司'
+TITLE_PART = '粘滞阻尼器'
+TITLE_MATERIAL = ''
+TITLE_WEIGHT = ''
+TITLE_SCALE = '1:1'
+
+# 标题栏框线（局部坐标：右下角为原点，x 向左为负，y 向上为正）
+TITLE_LINES = [
+    (-720, 200, 0, 200), (0, 200, 0, 0), (0, 0, -720, 0), (-720, 0, -720, 200),
+    (-480, 0, -480, 200), (-240, 0, -240, 200),
+    (-240, 60, -720, 60), (-240, 100, -720, 100),
+    (-480, 180, -720, 180), (-480, 160, -720, 160), (-480, 140, -720, 140),
+    (-480, 120, -720, 120), (-480, 80, -720, 80), (-480, 40, -720, 40),
+    (-420, 20, -420, 100), (-360, 0, -360, 100), (-300, 20, -300, 100),
+    (0, 150, -240, 150), (0, 100, -240, 100), (0, 50, -240, 50),
+    (-684, 100, -684, 200), (-576, 100, -576, 200),
+    (-600, 0, -600, 100), (-660, 0, -660, 100),
+    (-648, 100, -648, 200), (-520, 100, -520, 200), (-540, 0, -540, 100),
+    (-160, 0, -160, 200), (-720, 20, -240, 20),
+]
+
+# 标题栏表头文字（局部坐标，值固定）
+# 每项为 (样张左端 x, y, 字高, 文字, 所在格子中心 x)
+# 出图按样张左端 x 原样输出；预览可取格子中心 x 再居中（见 TITLE_CENTER_IN_PREVIEW）
+TITLE_LABELS = [
+    (-714, 118, 12, '标记', -702), (-678, 118, 12, '处数', -666),
+    (-642, 118, 12, '更改文件名', -612), (-557, 118, 12, '签名', -548),
+    (-508, 118, 12, '日期', -500),
+    (-700, 97, 12, '设计', -690), (-700, 77, 12, '制图', -690), (-700, 58, 12, '审核', -690),
+    (-464, 90, 14, '材料', -450), (-405, 89, 14, '数量', -390),
+    (-345, 89, 14, '重量', -330), (-285, 89, 14, '比例', -270),
+    (-232, 185, 16, '项目名称', -200), (-232, 135, 16, '零件名称', -200),
+    (-232, 85, 16, '产品型号', -200), (-230, 35, 16, '图纸编号', -200),
+    (-580, 96.31, 12, '日期', -570), (-580, 76.896, 12, '日期', -570),
+    (-580, 56.696, 12, '日期', -570), (-580, 16.926, 12, '日期', -570),
+    (-450, 13.806, 8, '第         页', -450), (-325, 14.229, 8, '共         页', -300),
+]
+
+
+def _text_width(value, height, width_factor=0.7):
+    """估算文字宽度：全角按 1 个字高、半角按 0.5 个字高（× 宽度因子）。"""
+    width = 0.0
+    for ch in str(value):
+        width += height * width_factor * (0.5 if ord(ch) < 0x2E80 else 1.0)
+    return width
+
+
+def _center_left(center_x, value, height, width_factor=0.7):
+    """由格子中心 x 折算文字左端 x，使文字在格子里水平居中。"""
+    return center_x - _text_width(value, height, width_factor) / 2.0
+
+
+# 「项目名称」内容格：宽度 160，右侧格线在 0（见 TITLE_LINES 的 -160 竖线）
+TITLE_PROJECT_CELL_W = 160.0
+TITLE_PROJECT_PAD = 20.0        # 文字与格线之间保留的余量
+
+
+# 估算字宽用的基准宽度（与 vfd_drawing.calculate_dynamic_width 一致）
+TITLE_BASE_WIDTH_CN = 23.7
+TITLE_BASE_WIDTH_EN = 11.85
+
+
+def _fit_width(value, max_width):
+    """按字数估算宽度，返回 (宽度因子, 实际宽度)。
+
+    参考 vfd_drawing.calculate_dynamic_width：中文按 23.7、半角按 11.85 计宽，
+    短文本保持样张宽度因子 0.7，字数多时按比例压缩（下限 0.3），使整串正好放进格内。
+    """
+    text = str(value)
+    cn = sum(1 for ch in text if ord(ch) >= 0x2E80)
+    en = len(text) - cn
+    estimated = cn * TITLE_BASE_WIDTH_CN + en * TITLE_BASE_WIDTH_EN
+    if estimated <= 0:
+        return 0.7, 0.0
+    factor = max(0.3, min(max_width / estimated, 0.7))
+    return factor, estimated * factor
+
+
+def title_info_of(project=None, model=None, drawing_no=None, part=None, quantity=None):
+    """组装标题栏的可填字段，空值不输出（对应格子留空）。"""
+    src = {
+        'project': project, 'part': part, 'model': model, 'drawing_no': drawing_no,
+        'quantity': quantity,
+    }
+    out = {}
+    for key, value in src.items():
+        text = str(value).strip() if value not in (None, '') else ''
+        if text:
+            out[key] = text
+    return out
+
+
+def _entities_bbox(entities):
+    """全部实体的包围盒，返回 (min_x, min_y, max_x, max_y)。"""
+    xs, ys = [], []
+    for e in entities:
+        t = e['type']
+        if t == 'LINE':
+            xs += [e['start'][0], e['end'][0]]
+            ys += [e['start'][1], e['end'][1]]
+        elif t in ('ARC', 'CIRCLE'):
+            cx, cy = e['center']
+            rr = e['radius']
+            xs += [cx - rr, cx + rr]
+            ys += [cy - rr, cy + rr]
+        elif t in ('TEXT', 'MTEXT'):
+            xs.append(e['position'][0])
+            ys.append(e['position'][1])
+        elif t == 'DIMENSION':
+            pts = (e['p1'], e['p2'], e['location']) if e['dim_type'] == 'LINEAR' \
+                else (e['center'], e['location'])
+            for pt in pts:
+                xs.append(pt[0])
+                ys.append(pt[1])
+    if not xs:
+        return 0.0, 0.0, 0.0, 0.0
+    return min(xs), min(ys), max(xs), max(ys)
+
+
+def build_title_block(b, ox, oy, info=None, center=False):
+    """标题栏：右下角位于 (ox, oy)，固定 720×200。
+
+    框线按样张绘制；表头与内容文字的字高、宽度因子照抄样张。
+    center=False（出图）时 x 取样张左端值，与样张完全一致；
+    center=True（预览）时 x 取所在格子中心，令文字在格子里水平居中。
+    """
+    info = info or {}
+    for x1, y1, x2, y2 in TITLE_LINES:
+        b.line(ox + x1, oy + y1, ox + x2, oy + y2, LAYER_OUTLINE)
+
+    for lx, ly, height, value, cx in TITLE_LABELS:
+        px = _center_left(cx, value, height) if center else lx
+        b.mtext(value, (ox + px, oy + ly), height, layer=LAYER_OUTLINE)
+
+    # 内容文字：(样张左端 x, y, 字高, 宽度因子, 值, 格子中心 x，是否自适应格宽)
+    fills = [
+        (-160, 185, 16, 0.7, info.get('project', 'XXX项目'), -80, True),
+        (-120, 135, 16, 0.7, info.get('part', TITLE_PART), -80, False),
+        (-125, 83, 16, 0.7, info.get('model', ''), -80, False),
+        (-160, 35, 16, 0.7, info.get('drawing_no', ''), -80, False),
+        (-476, 165, 20, 0.6, TITLE_COMPANY, -360, False),
+        (-464, 50, 14, 0.7, TITLE_MATERIAL, -450, False),
+        (-396, 50, 14, 0.7, info.get('quantity', ''), -390, False),
+        (-345, 50, 14, 0.7, TITLE_WEIGHT, -330, False),
+        (-285, 50, 14, 0.7, TITLE_SCALE, -270, False),
+    ]
+    for lx, ly, height, wf, value, cx, fit in fills:
+        if not value:
+            continue
+        if fit:
+            # 项目名称：按字数缩放字宽，使整串正好放进格子
+            wf, length = _fit_width(value, TITLE_PROJECT_CELL_W - TITLE_PROJECT_PAD)
+            if center:
+                # 预览按实际渲染宽度（字高 × 宽度因子）居中，出图保持样张口径
+                length = _text_width(value, height, wf)
+            px = cx - length / 2.0
+        else:
+            px = _center_left(cx, value, height, wf) if center else lx
+        b.mtext(value, (ox + px, oy + ly), height,
+                layer=LAYER_OUTLINE, width_factor=wf)
+
+
+def build_frame(b, entities, info=None, center_titles=False):
+    """图框：外框按标准长宽比（√2）随内容定尺寸，标题栏贴内框右下角。
+
+    先按内容算出所需图幅的长边，短边由 √2 换算，因此外框长宽比恒为标准值；
+    内容在内框中居中摆放。
+    """
+    min_x, min_y, max_x, max_y = _entities_bbox(entities)
+    content_w = max_x - min_x
+    content_h = max_y - min_y
+    cx = (min_x + max_x) / 2.0
+    cy = (min_y + max_y) / 2.0
+
+    # 内框：图形 + 四周边距，下方再留出一条标题栏的高度
+    inner_w = max(content_w + 2 * FRAME_MARGIN, TITLE_W + 2 * FRAME_MARGIN)
+    inner_h = content_h + 2 * FRAME_MARGIN + TITLE_H
+
+    # 外框：内框加装订/裁边间距后，按标准长宽比（√2）定图幅
+    sheet_w, sheet_h = _sheet_size(inner_w + 2 * FRAME_GAP, inner_h + 2 * FRAME_GAP)
+
+    inner_left = cx - sheet_w / 2.0 + FRAME_GAP
+    inner_right = cx + sheet_w / 2.0 - FRAME_GAP
+
+    # 可用区为「标题栏上沿 → 内框上沿」之间；图形在其中垂直居中后，
+    # 再按可用区高度上移一点（图面上方留白略少、下方留给注释文字），比例随图幅缩放
+    avail_h = (sheet_h - 2 * FRAME_GAP) - TITLE_H
+    inner_bottom = cy - TITLE_H - avail_h / 2.0 - avail_h * FRAME_UP_BIAS
+    inner_top = inner_bottom + sheet_h - 2 * FRAME_GAP
+
+    outer_left = inner_left - FRAME_GAP
+    outer_right = inner_right + FRAME_GAP
+    outer_bottom = inner_bottom - FRAME_GAP
+    outer_top = inner_top + FRAME_GAP
+
+    for x1, y1, x2, y2 in (
+        (outer_left, outer_bottom, outer_right, outer_bottom),
+        (outer_right, outer_bottom, outer_right, outer_top),
+        (outer_right, outer_top, outer_left, outer_top),
+        (outer_left, outer_top, outer_left, outer_bottom),
+    ):
+        b.line(x1, y1, x2, y2, LAYER_THIN)
+
+    for x1, y1, x2, y2 in (
+        (inner_left, inner_bottom, inner_right, inner_bottom),
+        (inner_right, inner_bottom, inner_right, inner_top),
+        (inner_right, inner_top, inner_left, inner_top),
+        (inner_left, inner_top, inner_left, inner_bottom),
+    ):
+        b.line(x1, y1, x2, y2, LAYER_OUTLINE)
+
+    build_title_block(b, inner_right, inner_bottom, info, center=center_titles)
+
+
 # ---------------------------------------------------------------- 对外接口
 
-def build_geometry(params, overrides=None, preview_dims=False):
+def build_geometry(params, overrides=None, preview_dims=False,
+                   with_frame=False, title_info=None, center_titles=False):
     """参数 -> 几何实体列表（局部坐标，前吊耳中心为 0）。
 
-    overrides    可覆盖设计尺寸的手工值，见 axial_points；
-    preview_dims 为 True 时附加预览专用标注（前腔/后腔长度、活塞宽度）。
+    overrides     可覆盖设计尺寸的手工值，见 axial_points；
+    preview_dims  为 True 时附加预览专用标注（前腔/后腔长度、活塞宽度）；
+    with_frame    为 True 时在图形外围补图框与标题栏；
+    title_info    标题栏可填字段（项目名称/零件名称/产品型号/图纸编号）；
+    center_titles 仅预览用：标题栏文字按格子居中，出图保持样张左端位置。
     """
     p = params or {}
     x = axial_points(p, overrides)
@@ -526,13 +855,16 @@ def build_geometry(params, overrides=None, preview_dims=False):
 
     b = _Builder()
     build_outline(b, p, x, r)
+    build_dust_cover(b, p, x, r)
     build_dimensions(b, p, x, r)
     if preview_dims:
         build_preview_dimensions(b, p, x, r)
+    if with_frame:
+        build_frame(b, b.entities, title_info, center_titles=center_titles)
     return b.entities, x, r
 
 
-def build_preview(params, overrides=None):
+def build_preview(params, overrides=None, title_info=None):
     """给前端 SVG 预览用的几何数据（含包围盒与特征点）。
 
     额外返回 axial_base：未应用覆盖的推导值，供前端在启用覆盖时
@@ -540,7 +872,9 @@ def build_preview(params, overrides=None):
     """
     p = params or {}
     ov = _clean_overrides(overrides)
-    entities, x, r = build_geometry(p, ov, preview_dims=True)
+    entities, x, r = build_geometry(p, ov, preview_dims=True,
+                                    with_frame=True, title_info=title_info,
+                                    center_titles=True)
     base = x if not ov else axial_points(p, None)
 
     xs, ys = [], []
